@@ -41,6 +41,12 @@ Mumbai Share Auto is a separate, independent native Android application develope
 - Trip history and document reminder system.
 - QR code generation, UPI payment handlers, and payment soundbox voice engine.
 
+## Passenger navigation to driver pickup
+- Every live route card offers **Open Driver Pickup in Maps** for the passenger.
+- Maps is opened with the driver's designated pickup stand and station as the destination; the driver remains at that pickup point and the passenger travels there.
+- This is address-based navigation, **not live driver GPS tracking**. Stand coordinates and directory details remain unverified reference information.
+- A driver who is nearby may coordinate a different meeting point directly with the passenger by mutual agreement; the app does not claim to verify that off-app arrangement.
+
 ## Locked Version 1 Business Rules
 1. **Total Fare per Booking**: Driver posts total fare for the booking, not a per-seat rate.
 2. **One Booking = One Passenger Party**: Different passenger parties are not automatically merged.
@@ -70,3 +76,10 @@ firebase deploy --only firestore:rules
 ```
 
 The repository includes `firebase.json` and `firestore.rules` for this deployment. Keep Firestore in production mode; do not replace these rules with public test-mode rules. Phone OTP SMS may require a linked Cloud Billing account and can incur charges.
+
+
+## Current implementation limits (read before production use)
+- The native Android app has the live route publication and seat-lock integration described above. The separate passenger-proposed total-fare offer and driver-acceptance workflow is **not yet connected to the Firestore live route flow**; the current live route model stores a driver-posted total booking fare. Do not treat this as the final passenger-entered-fare workflow.
+- Live GPS tracking of the driver's changing location is not implemented. Passenger navigation is to the designated pickup stand only.
+- The root web page is an informational placeholder, not a complete web booking app. Use the native Android project for the implemented application.
+- Legal seating capacity and the physical stand reference data require independent verification before commercial operation.
