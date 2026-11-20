@@ -14,11 +14,11 @@ export default function App() {
         </div>
         <h1 className="text-2xl font-extrabold text-[#0F172A]">Mumbai Share Auto</h1>
         <p className="text-sm text-[#475569] leading-relaxed">
-          Shared-auto route coordination, fixed total-party fare lock, and Mumbai station stand directory. This repository contains the complete Native Android (Kotlin + Jetpack Compose) application as well as web preview support.
+          The complete application is the native Android app built with Kotlin and Jetpack Compose. This page is an informational web placeholder only; web-based booking, live driver matching, and passenger-to-driver tracking are not implemented here.
         </p>
         <div className="pt-2">
           <span className="inline-block px-3 py-1 bg-[#ECFDF5] text-[#14532D] text-xs font-semibold rounded-full border border-[#A7F3D0]">
-            Android App &amp; Web Preview Ready
+            Native Android app source
           </span>
         </div>
       </div>

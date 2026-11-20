@@ -257,4 +257,25 @@ class DriverWorkflowTest {
         assertTrue(repeatResult is ValidationResult.Invalid)
         assertEquals(BookingLifecycleState.DRIVER_ACCEPTED, invalidRepeat.state)
     }
+
+    @Test
+    fun pickupDirectionsUrl_usesDriverDesignatedStandAndEncodesAddress() {
+        val url = PickupDirectionsUrl.build(
+            pickupStand = "Bandra East Auto Stand",
+            pickupStation = "Bandra East"
+        )
+
+        assertNotNull(url)
+        assertTrue(url!!.startsWith("https://www.google.com/maps/dir/?api=1&destination="))
+        assertTrue(url.contains("Bandra+East+Auto+Stand"))
+        assertTrue(url.contains("Mumbai%2C+Maharashtra%2C+India"))
+        assertFalse(url.contains("latitude"))
+    }
+
+    @Test
+    fun pickupDirectionsUrl_rejectsMissingPickupAddress() {
+        assertNull(PickupDirectionsUrl.build(" ", "Bandra"))
+        assertNull(PickupDirectionsUrl.build("Bandra East Stand", " "))
+    }
+
 }

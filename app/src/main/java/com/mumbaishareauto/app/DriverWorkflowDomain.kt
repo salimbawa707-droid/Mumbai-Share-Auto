@@ -342,3 +342,19 @@ object DriverWorkflowCoordinator {
         return agreement.transitionTo(targetState)
     }
 }
+
+
+/**
+ * Builds a Google Maps directions URL for the driver's explicitly selected pickup stand.
+ * This is a text-address destination, not a live GPS location or verified stand coordinate.
+ */
+object PickupDirectionsUrl {
+    fun build(pickupStand: String, pickupStation: String): String? {
+        val stand = pickupStand.trim()
+        val station = pickupStation.trim()
+        if (stand.isBlank() || station.isBlank()) return null
+        val destination = listOf(stand, station, "Mumbai, Maharashtra, India").joinToString(", ")
+        val encoded = java.net.URLEncoder.encode(destination, Charsets.UTF_8.name())
+        return "https://www.google.com/maps/dir/?api=1&destination=$encoded"
+    }
+}
