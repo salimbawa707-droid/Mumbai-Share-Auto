@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -18,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -62,7 +59,7 @@ fun FareNegotiationPanel(
                 OutlinedTextField(fare, { fare = it.filter { ch -> ch.isDigit() || ch == '.' }.take(9) }, label = { Text("Total group fare (₹)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
                 Button(
                     onClick = { viewModel.createPassengerFareOffer(routeId, passengerCount.toIntOrNull() ?: 0, pickup, destination, fare.toDoubleOrNull() ?: 0.0) },
-                    enabled = !state.isLoading && routeId.isNotBlank() && passengerCount.toIntOrNull() in 1..3 && pickup.length >= 3 && destination.length >= 3 && fare.toDoubleOrNull()?.let { it > 0 } == true,
+                    enabled = !state.isLoading && routeId.isNotBlank() && passengerCount.toIntOrNull()?.let { it in 1..3 } == true && pickup.length >= 3 && destination.length >= 3 && fare.toDoubleOrNull()?.let { it > 0 } == true,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Send Total Fare Offer") }
             }
@@ -71,7 +68,7 @@ fun FareNegotiationPanel(
             if (state.isLoading) Text("Updating negotiation…")
             Text(if (authState.authenticatedProfile?.role == AuthUserRole.DRIVER) "Incoming passenger offers" else "Your fare negotiations", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             if (state.sessions.isEmpty()) Text("No live fare offers yet.", style = MaterialTheme.typography.bodySmall)
-            state.sessions.forEach { session ->
+            state.sessions.take(3).forEach { session ->
                 FareNegotiationSessionCard(
                     session = session,
                     role = authState.authenticatedProfile?.role,
