@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="deep_navy">#FF12304A</color>
+    <color name="auto_amber">#FFD97706</color>
+    <color name="auto_yellow">#FFF59E0B</color>
+    <color name="emerald_success">#FF15803D</color>
+    <color name="clear_red">#FFDC2626</color>
+    <color name="surface_light">#FFF7F8FA</color>
+    <color name="ic_launcher_background">#FFE65100</color>
+</resources>

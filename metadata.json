@@ -1,0 +1,6 @@
+{
+  "name": "Mumbai Share Auto",
+  "description": "Mumbai Share Auto — Shared-auto route coordination, fixed total-party fare lock, and Mumbai station stand directory for commuters and auto drivers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

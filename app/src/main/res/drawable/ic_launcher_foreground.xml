@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylized front silhouette of a Mumbai auto-rickshaw inside the 72dp safe zone -->
+    <!-- Canopy roof -->
+    <path
+        android:fillColor="#FF1C1B1F"
+        android:pathData="M34,34 C34,27 41,24 54,24 C67,24 74,27 74,34 L76,46 L32,46 Z" />
+    <!-- Amber upper windshield frame -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M32,46 L76,46 L78,58 L30,58 Z" />
+    <!-- Windshield glass -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M36,36 C36,32 42,30 54,30 C66,30 72,32 72,36 L73,44 L35,44 Z" />
+    <!-- Lower apron (Kaali/Peeli body) -->
+    <path
+        android:fillColor="#FF1C1B1F"
+        android:pathData="M29,58 L79,58 L77,73 L31,73 Z" />
+    <!-- Central headlamp -->
+    <path
+        android:fillColor="#FFFFD54F"
+        android:pathData="M54,60 A4,4 0 1,1 53.99,60 Z" />
+    <!-- Side indicator lamps -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M36,63 A2.2,2.2 0 1,1 35.99,63 Z" />
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M72,63 A2.2,2.2 0 1,1 71.99,63 Z" />
+    <!-- Front fender & wheel -->
+    <path
+        android:fillColor="#FF263238"
+        android:pathData="M49,73 L59,73 L59,83 C59,85 57,86 54,86 C51,86 49,85 49,83 Z" />
+    <!-- Rear side tires -->
+    <path
+        android:fillColor="#FF111111"
+        android:pathData="M31,73 L38,73 L38,81 C38,82.5 36.5,83.5 34.5,83.5 C32.5,83.5 31,82.5 31,81 Z" />
+    <path
+        android:fillColor="#FF111111"
+        android:pathData="M70,73 L77,73 L77,81 C77,82.5 75.5,83.5 73.5,83.5 C71.5,83.5 70,82.5 70,81 Z" />
+</vector>
