@@ -359,13 +359,14 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
     override suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
-        seatsRequested: Int
+        seatsRequested: Int,
+        agreedTotalFare: Double?
     ): FirestoreActionResult<RouteSeatLock> {
         val current = routesMap[postingId]
             ?: return FirestoreActionResult.Failure("Route not found.", isDoubleBookingConflict = true)
         val existingLock = locksMap[postingId]?.get(passengerUid)
         return when (val transition = LiveRouteTransactionEngine.computeSeatLockTransition(
-            currentRoute = current,
+            currentRoute = if (agreedTotalFare == null) current else current.copy(totalBookingFare = agreedTotalFare),
             existingLock = existingLock,
             passengerUid = passengerUid,
             seatsRequested = seatsRequested
