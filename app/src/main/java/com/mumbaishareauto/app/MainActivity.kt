@@ -659,7 +659,8 @@ fun MumbaiShareAutoApp(
                     FareNegotiationPanel(
                         viewModel = viewModel,
                         authState = phoneAuthState,
-                        state = fareNegotiationState
+                        state = fareNegotiationState,
+                        availableRoutes = (liveRoutesState as? LiveRoutesStreamState.Live)?.routes.orEmpty()
                     )
                 }
             }
