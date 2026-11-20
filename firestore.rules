@@ -44,8 +44,11 @@ service cloud.firestore {
         reg.matches('^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$');
     }
 
+    // A profile phone number must come from the Firebase Phone Auth token.
+    // Do not accept a client-supplied number when the verified claim is absent.
     function matchesVerifiedPhoneClaim(phone) {
-      return !('phone_number' in request.auth.token) ||
+      return isSignedIn() &&
+        ('phone_number' in request.auth.token) &&
         request.auth.token.phone_number == phone;
     }
 
@@ -268,7 +271,10 @@ service cloud.firestore {
         request.auth.uid == existing().driverUid;
 
       match /seat_locks/{passengerUid} {
-        allow read: if isSignedIn();
+        // A passenger may read only their own lock; the route owner may read its queue.
+        allow read: if isOwner(passengerUid) ||
+          (isSignedIn() &&
+            get(/databases/$(database)/documents/active_routes/$(postingId)).data.driverUid == request.auth.uid);
 
         allow create: if isValidId(postingId) &&
           isValidId(passengerUid) &&
