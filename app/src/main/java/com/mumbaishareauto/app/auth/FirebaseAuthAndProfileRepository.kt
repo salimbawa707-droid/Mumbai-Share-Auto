@@ -80,6 +80,9 @@ interface PhoneAuthGateway {
     ): OtpVerificationResult
 
     fun signOut()
+
+    /** Release Firebase listeners when the owning ViewModel is permanently cleared. */
+    fun unregister() {}
 }
 
 interface UserProfileRemoteDataSource {
@@ -129,7 +132,7 @@ class FirebasePhoneAuthGateway(
         auth?.addAuthStateListener(authStateListener)
     }
 
-    fun unregister() {
+    override fun unregister() {
         auth?.removeAuthStateListener(authStateListener)
     }
 
