@@ -820,6 +820,12 @@ class FirebaseFirestoreRepository(
         if (cleanPostingId.isEmpty() || cleanPassengerUid.isEmpty()) {
             return@withContext FirestoreActionResult.Failure("Route ID and Passenger UID are required.")
         }
+        val signedInUid = auth?.currentUser?.uid
+        if (signedInUid.isNullOrBlank() || signedInUid != cleanPassengerUid) {
+            return@withContext FirestoreActionResult.Failure(
+                message = "Sign in with the same passenger account that locked this seat before releasing it."
+            )
+        }
 
         val routeRef = db.collection(LiveAutoRoute.COLLECTION_ACTIVE_ROUTES).document(cleanPostingId)
         val lockRef = routeRef.collection(LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS).document(cleanPassengerUid)
@@ -892,6 +898,12 @@ class FirebaseFirestoreRepository(
         )
         if (cleanPostingId.isEmpty() || cleanDriverUid.isEmpty()) {
             return@withContext FirestoreActionResult.Failure("Route ID and Driver UID are required.")
+        }
+        val signedInUid = auth?.currentUser?.uid
+        if (signedInUid.isNullOrBlank() || signedInUid != cleanDriverUid) {
+            return@withContext FirestoreActionResult.Failure(
+                message = "Sign in with the driver account that published this route before closing it."
+            )
         }
         val path = "${LiveAutoRoute.COLLECTION_ACTIVE_ROUTES}/$cleanPostingId"
         try {
