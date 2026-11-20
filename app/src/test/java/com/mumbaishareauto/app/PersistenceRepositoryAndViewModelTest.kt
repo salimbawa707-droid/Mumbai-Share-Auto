@@ -102,7 +102,7 @@ class PersistenceRepositoryAndViewModelTest {
         val prefs = InMemorySharedPreferences()
         val favDao = FakeFavoriteRouteDao()
         val prefsDao = FakeUserPreferencesDao()
-        val failingRunner = FakeTransactionRunner(failOnNextWrite = true)
+        val failingRunner = FakeTransactionRunner()
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
         val repo = FavoriteRouteRepository(
@@ -114,6 +114,8 @@ class PersistenceRepositoryAndViewModelTest {
             externalScope = scope
         )
         advanceUntilIdle()
+        // Let startup migration finish first; fail the explicit user write, not initialization.
+        failingRunner.failNextWrite()
 
         val result = repo.toggleFavoritePersist("h_vsh_w_infotech")
         assertTrue(result is PersistenceResult.Failure)
@@ -318,6 +320,7 @@ internal class FakeTransactionRunner(
     private val failOnNextWrite: Boolean = false
 ) : TransactionRunner {
     private var armed = failOnNextWrite
+    fun failNextWrite() { armed = true }
     override suspend fun <T> runInTransaction(block: suspend () -> T): T {
         if (armed) {
             armed = false
