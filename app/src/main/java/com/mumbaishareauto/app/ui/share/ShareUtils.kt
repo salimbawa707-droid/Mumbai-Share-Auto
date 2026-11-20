@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import com.mumbaishareauto.app.data.MumbaiStationDirectory
+import com.mumbaishareauto.app.data.remote.LiveAutoRoute
+import com.mumbaishareauto.app.PickupDirectionsUrl
 import com.mumbaishareauto.app.model.StationStandRoute
 
 /**
@@ -43,6 +45,30 @@ object ShareUtils {
             } catch (_: Exception) {
                 Toast.makeText(context, "Google Maps is not available on this device", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    /**
+     * Opens directions to the pickup point selected by the driver. The destination is the
+     * designated stand address, not the driver's live/current GPS position.
+     */
+    fun openDriverPickupInMaps(context: Context, route: LiveAutoRoute) {
+        val url = PickupDirectionsUrl.build(
+            pickupStand = route.designatedStand,
+            pickupStation = "${route.pickupStation} ${route.pickupSide.label}"
+        )
+        if (url == null) {
+            Toast.makeText(context, "Driver pickup location is unavailable", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            )
+        } catch (_: Exception) {
+            Toast.makeText(context, "Unable to open Maps on this device", Toast.LENGTH_SHORT).show()
         }
     }
 
