@@ -6,12 +6,12 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
 jobs:
   android-verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: MumbaiShareAuto
 
     steps:
       - name: Checkout repository
@@ -24,8 +24,8 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Grant executable permission to gradlew
-        run: chmod +x gradlew
+      - name: Grant executable permission to Gradle wrapper
+        run: chmod +x ./gradlew
 
       - name: Run unit tests and Android Lint
         run: ./gradlew clean testDebugUnitTest lintDebug --no-daemon
@@ -36,11 +36,13 @@ jobs:
       - name: Build release APK (verify R8 shrinking)
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Upload debug APK & test reports
+      - name: Upload Android build artifacts and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mumbai-share-auto-android-artifacts
+          if-no-files-found: warn
           path: |
-            MumbaiShareAuto/app/build/outputs/apk/
-            MumbaiShareAuto/app/build/reports/
+            app/build/outputs/apk/
+            app/build/reports/
+            app/build/test-results/
