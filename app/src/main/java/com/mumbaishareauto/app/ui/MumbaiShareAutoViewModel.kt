@@ -1029,7 +1029,8 @@ class MumbaiShareAutoViewModel(
         private val favoriteRouteRepository: FavoriteRouteRepository,
         private val phoneAuthGateway: PhoneAuthGateway? = null,
         private val userProfileRemoteDataSource: UserProfileRemoteDataSource? = null,
-        private val liveRoutesGateway: LiveRoutesDataSource? = null
+        private val liveRoutesGateway: LiveRoutesDataSource? = null,
+        private val fareNegotiationRepository: FareNegotiationFirestoreRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
