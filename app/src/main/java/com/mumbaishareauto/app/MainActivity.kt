@@ -359,18 +359,6 @@ fun MumbaiShareAutoApp(
                         )
                     }
                 }
-                if (viewModel != null && currentRoute in setOf(
-                        AppRoute.PASSENGER_BOOKING,
-                        AppRoute.FIND_SHARED_AUTO,
-                        AppRoute.DRIVER_MODE,
-                        AppRoute.DRIVER_ROUTE_POSTING
-                    )) {
-                    FareNegotiationPanel(
-                        viewModel = viewModel,
-                        authState = phoneAuthState,
-                        state = fareNegotiationState
-                    )
-                }
             }
         }
     ) { innerPadding ->
@@ -661,6 +649,18 @@ fun MumbaiShareAutoApp(
 
                         AppRoute.HELP_ABOUT -> HelpAboutScreen()
                     }
+                }
+                if (viewModel != null && currentRoute in setOf(
+                        AppRoute.PASSENGER_BOOKING,
+                        AppRoute.FIND_SHARED_AUTO,
+                        AppRoute.DRIVER_MODE,
+                        AppRoute.DRIVER_ROUTE_POSTING
+                    )) {
+                    FareNegotiationPanel(
+                        viewModel = viewModel,
+                        authState = phoneAuthState,
+                        state = fareNegotiationState
+                    )
                 }
             }
         }
