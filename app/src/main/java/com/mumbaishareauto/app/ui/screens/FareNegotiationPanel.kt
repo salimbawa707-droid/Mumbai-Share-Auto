@@ -104,7 +104,11 @@ fun FareNegotiationPanel(
                     onDriverCounter = { viewModel.driverCounterFare(session.bookingId, counterFare.toDoubleOrNull() ?: 0.0) },
                     onPassengerAccept = { viewModel.passengerAcceptCounter(session.bookingId) },
                     onPassengerDecline = { viewModel.passengerDeclineCounter(session.bookingId) },
-                    onCancel = { viewModel.cancelFareNegotiation(session.bookingId) }
+                    onCancel = { viewModel.cancelFareNegotiation(session.bookingId) },
+                    isLoading = state.isLoading,
+                    onConfirmSeatLock = { routeId, seats, totalFare ->
+                        viewModel.lockSeatOnLiveRoute(routeId, seats, totalFare)
+                    }
                 )
             }
             state.activeSession?.let { session ->
@@ -127,7 +131,9 @@ private fun FareNegotiationSessionCard(
     onDriverCounter: () -> Unit,
     onPassengerAccept: () -> Unit,
     onPassengerDecline: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    isLoading: Boolean,
+    onConfirmSeatLock: (String, Int, Double) -> Unit
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -152,8 +158,8 @@ private fun FareNegotiationSessionCard(
             if (role == AuthUserRole.PASSENGER && session.status.name == "AGREED" && session.agreedTotalFareInr != null) {
                 Text("Driver accepted. Final group fare: ₹${session.agreedTotalFareInr}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Button(
-                    onClick = { viewModel.lockSeatOnLiveRoute(session.routeId, session.passengerCount, session.agreedTotalFareInr) },
-                    enabled = !state.isLoading,
+                    onClick = { onConfirmSeatLock(session.routeId, session.passengerCount, session.agreedTotalFareInr) },
+                    enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Confirm & Reserve ${session.passengerCount} Seat(s)") }
             }
