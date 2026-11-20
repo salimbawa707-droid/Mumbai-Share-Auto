@@ -489,7 +489,8 @@ interface LiveRoutesDataSource {
     suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
-        seatsRequested: Int
+        seatsRequested: Int,
+        agreedTotalFare: Double? = null
     ): FirestoreActionResult<RouteSeatLock>
     suspend fun releaseSeatTransaction(
         postingId: String,
@@ -724,7 +725,8 @@ class FirebaseFirestoreRepository(
     override suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
-        seatsRequested: Int
+        seatsRequested: Int,
+        agreedTotalFare: Double?
     ): FirestoreActionResult<RouteSeatLock> = withContext(ioDispatcher) {
         val cleanPostingId = postingId.trim()
         val cleanPassengerUid = passengerUid.trim()
@@ -764,8 +766,12 @@ class FirebaseFirestoreRepository(
                     null
                 }
 
+                if (agreedTotalFare != null && (!agreedTotalFare.isFinite() || agreedTotalFare <= 0.0)) {
+                    throw SeatLockConflictException("Agreed total fare must be a positive finite amount.", false)
+                }
+                val routeForFare = if (agreedTotalFare == null) currentRoute else currentRoute.copy(totalBookingFare = agreedTotalFare)
                 when (val transition = LiveRouteTransactionEngine.computeSeatLockTransition(
-                    currentRoute = currentRoute,
+                    currentRoute = routeForFare,
                     existingLock = existingLock,
                     passengerUid = cleanPassengerUid,
                     seatsRequested = seatsRequested
