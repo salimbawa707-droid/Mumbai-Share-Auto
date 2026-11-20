@@ -4,11 +4,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -24,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mumbaishareauto.app.FareNegotiationSession
 import com.mumbaishareauto.app.auth.AuthUserRole
+import com.mumbaishareauto.app.data.remote.LiveAutoRoute
 import com.mumbaishareauto.app.ui.FareNegotiationUiState
 import com.mumbaishareauto.app.ui.MumbaiShareAutoViewModel
 import com.mumbaishareauto.app.ui.PhoneAuthUiState
@@ -33,6 +40,7 @@ fun FareNegotiationPanel(
     viewModel: MumbaiShareAutoViewModel,
     authState: PhoneAuthUiState,
     state: FareNegotiationUiState,
+    availableRoutes: List<LiveAutoRoute> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var routeId by rememberSaveable { mutableStateOf("") }
@@ -42,9 +50,9 @@ fun FareNegotiationPanel(
     var fare by rememberSaveable { mutableStateOf("") }
     var counterFare by rememberSaveable { mutableStateOf("") }
 
-    Card(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Card(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(max = 360.dp)) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(14.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             Text("Live Group Fare Negotiation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -53,6 +61,22 @@ fun FareNegotiationPanel(
                 Text("Sign in and complete your Passenger or Driver profile to use live fare negotiation.", color = MaterialTheme.colorScheme.error)
             } else if (authState.authenticatedProfile.role == AuthUserRole.PASSENGER) {
                 OutlinedTextField(routeId, { routeId = it.trim() }, label = { Text("Driver live route ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (availableRoutes.isNotEmpty()) {
+                    Text("Choose an active driver route", style = MaterialTheme.typography.labelMedium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(availableRoutes, key = { it.postingId }) { route ->
+                            FilterChip(
+                                selected = routeId == route.postingId,
+                                onClick = {
+                                    routeId = route.postingId
+                                    pickup = route.designatedStand
+                                    destination = route.destination
+                                },
+                                label = { Text("${route.designatedStand} → ${route.destination}") }
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(passengerCount, { passengerCount = it.filter(Char::isDigit).take(1) }, label = { Text("Passengers (1–3)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(pickup, { pickup = it }, label = { Text("Driver pickup stand") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(destination, { destination = it }, label = { Text("Destination") }, singleLine = true, modifier = Modifier.fillMaxWidth())
