@@ -29,6 +29,26 @@ class FareNegotiationFirestoreRepository(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
+    fun observeDriverSessions(driverUid: String): Flow<List<FareNegotiationSession>> = observeParticipantSessions("driverUid", driverUid)
+
+    fun observePassengerSessions(passengerUid: String): Flow<List<FareNegotiationSession>> = observeParticipantSessions("passengerUid", passengerUid)
+
+    private fun observeParticipantSessions(field: String, uid: String): Flow<List<FareNegotiationSession>> = callbackFlow {
+        val cleanUid = uid.trim()
+        if (cleanUid.isEmpty() || auth.currentUser?.uid != cleanUid) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val registration = firestore.collection(COLLECTION)
+            .whereEqualTo(field, cleanUid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) close(error)
+                else trySend(snapshot?.documents.orEmpty().map { it.toSession() }.sortedByDescending { it.events.lastOrNull()?.createdAtEpochMs ?: 0L })
+            }
+        awaitClose { registration.remove() }
+    }
+
     fun observeSession(bookingId: String): Flow<FareNegotiationSession?> = callbackFlow {
         val id = bookingId.trim()
         if (id.isEmpty() || auth.currentUser == null) {
