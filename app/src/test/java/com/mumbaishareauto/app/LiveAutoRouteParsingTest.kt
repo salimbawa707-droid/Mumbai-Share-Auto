@@ -1,6 +1,8 @@
 package com.mumbaishareauto.app
 
 import com.mumbaishareauto.app.data.remote.LiveAutoRoute
+import com.mumbaishareauto.app.data.remote.LiveRouteTransactionEngine
+import com.mumbaishareauto.app.data.remote.FirestoreActionResult
 import com.mumbaishareauto.app.model.StationSide
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -42,5 +44,35 @@ class LiveAutoRouteParsingTest {
             remove(LiveAutoRoute.FIELD_IS_ACTIVE)
         }
         assertNull(LiveAutoRoute.fromFirestoreFields("route_1", missingState))
+    }
+
+    @Test
+    fun seatLockUsesNegotiatedWholeGroupFareInsteadOfDriversListedFare() {
+        val route = LiveAutoRoute.fromFirestoreFields("route_1", payload(3, 3))!!
+        val negotiatedRoute = route.copy(totalBookingFare = 77.0)
+
+        val result = LiveRouteTransactionEngine.computeSeatLockTransition(
+            currentRoute = negotiatedRoute,
+            existingLock = null,
+            passengerUid = "passenger_1",
+            seatsRequested = 2
+        )
+
+        assert(result is FirestoreActionResult.Success)
+        val lock = (result as FirestoreActionResult.Success).data.createdOrUpdatedLock
+        assertEquals(77.0, lock.agreedTotalFare, 0.0)
+        assertEquals(2, lock.seatsLocked)
+    }
+
+    @Test
+    fun groupCannotReserveMoreThanThreePassengerSeats() {
+        val route = LiveAutoRoute.fromFirestoreFields("route_1", payload(3, 3))!!
+        val result = LiveRouteTransactionEngine.computeSeatLockTransition(
+            currentRoute = route,
+            existingLock = null,
+            passengerUid = "passenger_2",
+            seatsRequested = 4
+        )
+        assert(result is FirestoreActionResult.Failure)
     }
 }
