@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1086477081003",
+    "project_id": "mumbai-share-auto",
+    "storage_bucket": "mumbai-share-auto.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1086477081003:android:f0f8e4b716c5cfb6821aee",
+        "android_client_info": {
+          "package_name": "com.mumbaishareauto.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBDCpPFAB3wZ32s2yv26f_CW0ltu5aEAA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

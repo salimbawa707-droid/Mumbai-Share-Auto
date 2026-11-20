@@ -708,6 +708,15 @@ class MumbaiShareAutoViewModel(
             }
             return
         }
+        if (currentAuth.authenticatedProfile?.role != AuthUserRole.DRIVER) {
+            _liveRouteActionState.update {
+                it.copy(
+                    lastActionError = "A saved Driver profile is required before publishing a live route. Sign in and complete Driver profile setup.",
+                    lastActionMessage = null
+                )
+            }
+            return
+        }
 
         val command = PublishRouteCommand(
             driverUid = signedInUid,
@@ -771,10 +780,20 @@ class MumbaiShareAutoViewModel(
             }
             return
         }
-        val passengerUid = _phoneAuthState.value.signedInUser?.uid
+        val authState = _phoneAuthState.value
+        val passengerUid = authState.signedInUser?.uid
         if (passengerUid.isNullOrBlank()) {
             _liveRouteActionState.update {
                 it.copy(lastActionError = "Sign in with +91 Mobile OTP to lock a seat.", lastActionMessage = null)
+            }
+            return
+        }
+        if (authState.authenticatedProfile?.role != AuthUserRole.PASSENGER) {
+            _liveRouteActionState.update {
+                it.copy(
+                    lastActionError = "A saved Passenger profile is required before locking a seat.",
+                    lastActionMessage = null
+                )
             }
             return
         }
@@ -900,6 +919,14 @@ class MumbaiShareAutoViewModel(
         driverRoutesRepo.clearError()
         userPreferencesRepo.clearError()
         notificationsRepo.clearError()
+    }
+
+    override fun onCleared() {
+        cooldownJob?.cancel()
+        driverRoutesObserverJob?.cancel()
+        queueObserverJob?.cancel()
+        phoneAuthGateway?.unregister()
+        super.onCleared()
     }
 
     class Factory(

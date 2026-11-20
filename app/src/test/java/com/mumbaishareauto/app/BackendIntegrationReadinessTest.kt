@@ -223,9 +223,9 @@ class BackendIntegrationReadinessTest {
             val prefsDao = FakeUserPreferencesDao()
             val txRunner = FakeTransactionRunner()
             val repoScope = CoroutineScope(SupervisorJob() + dispatcher)
-            val fakeAuth = FakePhoneAuthGateway(isConfigured = true)
-            val fakeProfileStore = FakeUserProfileRemoteDataSource(isConfigured = true)
-            val liveStore = InMemoryTransactionalFirestoreRoutesRepo(isConfigured = true)
+            val fakeAuth = FakePhoneAuthGateway(isFirebaseConfigured = true)
+            val fakeProfileStore = FakeUserProfileRemoteDataSource(isFirestoreConfigured = true)
+            val liveStore = InMemoryTransactionalFirestoreRoutesRepo(isFirestoreConfigured = true)
 
             val vm = MumbaiShareAutoViewModel(
                 favoriteRoutesRepo = FavoriteRouteRepository(prefs, FakeFavoriteRouteDao(), prefsDao, txRunner, dispatcher, repoScope),
@@ -269,6 +269,9 @@ class BackendIntegrationReadinessTest {
 
             // Passenger signs in, sees live route, and atomically locks 2 seats
             fakeAuth.emitTestUser("pax_uid_01", "+919820099887")
+            fakeProfileStore.saveAuthenticatedProfile(
+                AuthenticatedUserProfile("pax_uid_01", "+919820099887", AuthUserRole.PASSENGER)
+            )
             advanceUntilIdle()
 
             vm.lockSeatOnLiveRoute(publishedRouteId!!, seatsRequested = 2)
@@ -282,6 +285,9 @@ class BackendIntegrationReadinessTest {
 
             // Second passenger tries locking 2 seats when only 1 left -> rejected safely
             fakeAuth.emitTestUser("pax_uid_02", "+919820077665")
+            fakeProfileStore.saveAuthenticatedProfile(
+                AuthenticatedUserProfile("pax_uid_02", "+919820077665", AuthUserRole.PASSENGER)
+            )
             advanceUntilIdle()
             vm.lockSeatOnLiveRoute(publishedRouteId!!, seatsRequested = 2)
             advanceUntilIdle()
@@ -337,7 +343,6 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
     override fun observeRouteQueueLocks(postingId: String): Flow<List<RouteSeatLock>> =
         queueFlows.getOrPut(postingId) { MutableStateFlow(emptyList()) }.asStateFlow()
 
-    @Synchronized
     override suspend fun publishActiveRoute(command: PublishRouteCommand): FirestoreActionResult<LiveAutoRoute> {
         val postingId = "ROUTE_${UUID.randomUUID().toString().take(8).uppercase()}"
         return when (val res = LiveRouteTransactionEngine.buildNewLiveRoute(postingId, command)) {
@@ -351,7 +356,6 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
         }
     }
 
-    @Synchronized
     override suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
@@ -376,7 +380,6 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
         }
     }
 
-    @Synchronized
     override suspend fun releaseSeatTransaction(
         postingId: String,
         passengerUid: String
@@ -399,7 +402,6 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
         }
     }
 
-    @Synchronized
     override suspend fun deactivateDriverRoute(
         postingId: String,
         driverUid: String

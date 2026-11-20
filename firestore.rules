@@ -31,6 +31,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function hasUserRole(role) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
     function isValidIndianPhone(phone) {
       return phone is string &&
         phone.size() == 13 &&
@@ -44,8 +50,11 @@ service cloud.firestore {
         reg.matches('^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$');
     }
 
+    // A profile phone number must come from the Firebase Phone Auth token.
+    // Do not accept a client-supplied number when the verified claim is absent.
     function matchesVerifiedPhoneClaim(phone) {
-      return !('phone_number' in request.auth.token) ||
+      return isSignedIn() &&
+        ('phone_number' in request.auth.token) &&
         request.auth.token.phone_number == phone;
     }
 
@@ -139,7 +148,8 @@ service cloud.firestore {
     }
 
     function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute) {
-      return data.keys().hasAll([
+      return hasUserRole('PASSENGER') &&
+        data.keys().hasAll([
           'lockId',
           'postingId',
           'passengerUid',
@@ -213,6 +223,7 @@ service cloud.firestore {
 
       allow create: if isValidId(postingId) &&
         isSignedIn() &&
+        hasUserRole('DRIVER') &&
         isValidLiveAutoRouteCreate(incoming(), postingId);
 
       // Driver can close route; signed-in passenger (non-driver) can atomically lock/release seats
@@ -225,12 +236,10 @@ service cloud.firestore {
           incoming().totalBookingFare == existing().totalBookingFare &&
           incoming().createdAt == existing().createdAt &&
           incoming().isLegallyVerified == existing().isLegallyVerified &&
+          incoming().availableSeats == existing().availableSeats &&
           incoming().updatedAt == request.time &&
-          incoming().availableSeats is int &&
-          incoming().availableSeats >= 0 &&
-          incoming().availableSeats <= existing().totalCapacitySeats &&
-          incoming().isActive is bool &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'availableSeats', 'updatedAt'])
+          incoming().isActive == false &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt'])
         ) || (
           request.auth.uid != existing().driverUid &&
           incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'updatedAt']) &&
@@ -263,12 +272,14 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isValidId(postingId) &&
-        isSignedIn() &&
-        request.auth.uid == existing().driverUid;
+      // Keep route history and nested seat-lock records; drivers must close routes instead.
+      allow delete: if false;
 
       match /seat_locks/{passengerUid} {
-        allow read: if isSignedIn();
+        // A passenger may read only their own lock; the route owner may read its queue.
+        allow read: if isOwner(passengerUid) ||
+          (isSignedIn() &&
+            get(/databases/$(database)/documents/active_routes/$(postingId)).data.driverUid == request.auth.uid);
 
         allow create: if isValidId(postingId) &&
           isValidId(passengerUid) &&
@@ -288,6 +299,7 @@ service cloud.firestore {
         allow update: if isValidId(postingId) &&
           isValidId(passengerUid) &&
           isOwner(passengerUid) &&
+          hasUserRole('PASSENGER') &&
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
           incoming().updatedAt == request.time &&
           (

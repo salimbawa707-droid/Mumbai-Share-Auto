@@ -128,8 +128,8 @@ class FirebasePhoneAuthAndProfileTest {
             val txRunner = FakeTransactionRunner()
             val repoScope = CoroutineScope(SupervisorJob() + dispatcher)
 
-            val fakeAuth = FakePhoneAuthGateway(isConfigured = true)
-            val fakeProfileStore = FakeUserProfileRemoteDataSource(isConfigured = true)
+            val fakeAuth = FakePhoneAuthGateway(isFirebaseConfigured = true)
+            val fakeProfileStore = FakeUserProfileRemoteDataSource(isFirestoreConfigured = true)
 
             val vm = MumbaiShareAutoViewModel(
                 favoriteRoutesRepo = FavoriteRouteRepository(prefs, favDao, prefsDao, txRunner, dispatcher, repoScope),
@@ -203,8 +203,8 @@ class FirebasePhoneAuthAndProfileTest {
             val prefsDao = FakeUserPreferencesDao()
             val txRunner = FakeTransactionRunner()
             val repoScope = CoroutineScope(SupervisorJob() + dispatcher)
-            val fakeAuth = FakePhoneAuthGateway(isConfigured = false)
-            val fakeProfileStore = FakeUserProfileRemoteDataSource(isConfigured = false)
+            val fakeAuth = FakePhoneAuthGateway(isFirebaseConfigured = false)
+            val fakeProfileStore = FakeUserProfileRemoteDataSource(isFirestoreConfigured = false)
 
             val vm = MumbaiShareAutoViewModel(
                 favoriteRoutesRepo = FavoriteRouteRepository(prefs, FakeFavoriteRouteDao(), prefsDao, txRunner, dispatcher, repoScope),

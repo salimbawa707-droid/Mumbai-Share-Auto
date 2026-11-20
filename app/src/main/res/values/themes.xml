@@ -3,6 +3,5 @@
     <style name="Theme.MumbaiShareAuto" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@color/deep_navy</item>
         <item name="android:navigationBarColor">@color/surface_light</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
