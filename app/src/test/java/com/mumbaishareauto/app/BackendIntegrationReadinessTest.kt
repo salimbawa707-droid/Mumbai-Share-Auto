@@ -269,6 +269,9 @@ class BackendIntegrationReadinessTest {
 
             // Passenger signs in, sees live route, and atomically locks 2 seats
             fakeAuth.emitTestUser("pax_uid_01", "+919820099887")
+            fakeProfileStore.saveAuthenticatedProfile(
+                AuthenticatedUserProfile("pax_uid_01", "+919820099887", AuthUserRole.PASSENGER)
+            )
             advanceUntilIdle()
 
             vm.lockSeatOnLiveRoute(publishedRouteId!!, seatsRequested = 2)
@@ -282,6 +285,9 @@ class BackendIntegrationReadinessTest {
 
             // Second passenger tries locking 2 seats when only 1 left -> rejected safely
             fakeAuth.emitTestUser("pax_uid_02", "+919820077665")
+            fakeProfileStore.saveAuthenticatedProfile(
+                AuthenticatedUserProfile("pax_uid_02", "+919820077665", AuthUserRole.PASSENGER)
+            )
             advanceUntilIdle()
             vm.lockSeatOnLiveRoute(publishedRouteId!!, seatsRequested = 2)
             advanceUntilIdle()
