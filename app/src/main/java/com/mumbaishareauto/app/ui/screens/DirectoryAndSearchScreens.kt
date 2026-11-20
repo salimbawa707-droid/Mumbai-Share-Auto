@@ -404,6 +404,7 @@ fun FindSharedAutoScreen(
                                 isReleasing = liveRouteActionState.releasingPostingId == liveRoute.postingId,
                                 isQueueExpanded = isSelectedQueue,
                                 queueLocks = if (isSelectedQueue) liveRouteActionState.selectedQueueLocks else emptyList(),
+                                allowSeatLock = false,
                                 onLockSeats = { seats -> onLockSeat(liveRoute.postingId, seats) },
                                 onReleaseSeat = { onReleaseSeat(liveRoute.postingId) },
                                 onToggleQueueView = {
@@ -457,6 +458,7 @@ fun LiveAutoRouteCard(
     isReleasing: Boolean,
     isQueueExpanded: Boolean,
     queueLocks: List<RouteSeatLock>,
+    allowSeatLock: Boolean = true,
     onLockSeats: (Int) -> Unit,
     onReleaseSeat: () -> Unit,
     onToggleQueueView: () -> Unit
@@ -604,6 +606,14 @@ fun LiveAutoRouteCard(
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text("Release My Seat Lock")
+                    }
+                } else if (!allowSeatLock) {
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false,
+                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                    ) {
+                        Text("Negotiate total fare first")
                     }
                 } else {
                     Button(
