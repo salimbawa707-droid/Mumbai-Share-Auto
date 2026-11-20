@@ -272,9 +272,8 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isValidId(postingId) &&
-        isSignedIn() &&
-        request.auth.uid == existing().driverUid;
+      // Keep route history and nested seat-lock records; drivers must close routes instead.
+      allow delete: if false;
 
       match /seat_locks/{passengerUid} {
         // A passenger may read only their own lock; the route owner may read its queue.
@@ -300,6 +299,7 @@ service cloud.firestore {
         allow update: if isValidId(postingId) &&
           isValidId(passengerUid) &&
           isOwner(passengerUid) &&
+          hasUserRole('PASSENGER') &&
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
           incoming().updatedAt == request.time &&
           (
