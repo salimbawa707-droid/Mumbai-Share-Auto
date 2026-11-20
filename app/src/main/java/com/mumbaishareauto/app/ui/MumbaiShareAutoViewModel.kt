@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mumbaishareauto.app.BookingAgreement
 import com.mumbaishareauto.app.BookingLifecycleState
+import com.mumbaishareauto.app.FareNegotiationSession
+import com.mumbaishareauto.app.data.remote.FareNegotiationFirestoreRepository
 import com.mumbaishareauto.app.UserMode
 import com.mumbaishareauto.app.auth.AuthDomainValidator
 import com.mumbaishareauto.app.auth.AuthFieldValidation
@@ -80,6 +82,14 @@ data class PhoneAuthUiState(
     val isFirebaseConfigured: Boolean = false
 )
 
+data class FareNegotiationUiState(
+    val sessions: List<FareNegotiationSession> = emptyList(),
+    val activeSession: FareNegotiationSession? = null,
+    val isLoading: Boolean = false,
+    val message: String? = null,
+    val error: String? = null
+)
+
 data class LiveRouteActionState(
     val isPublishingRoute: Boolean = false,
     val lockingPostingId: String? = null,
@@ -104,7 +114,8 @@ class MumbaiShareAutoViewModel(
     private val notificationsRepo: NotificationsDataSource,
     private val phoneAuthGateway: PhoneAuthGateway? = null,
     private val userProfileRemoteDataSource: UserProfileRemoteDataSource? = null,
-    private val liveRoutesGateway: LiveRoutesDataSource? = null
+    private val liveRoutesGateway: LiveRoutesDataSource? = null,
+    private val fareNegotiationRepository: FareNegotiationFirestoreRepository? = null
 ) : ViewModel() {
 
     val favoriteKeys: StateFlow<Set<String>> = favoriteRoutesRepo.favoriteKeys
@@ -141,6 +152,11 @@ class MumbaiShareAutoViewModel(
 
     private val _liveRouteActionState = MutableStateFlow(LiveRouteActionState())
     val liveRouteActionState: StateFlow<LiveRouteActionState> = _liveRouteActionState.asStateFlow()
+
+    private val _fareNegotiationState = MutableStateFlow(FareNegotiationUiState())
+    val fareNegotiationState: StateFlow<FareNegotiationUiState> = _fareNegotiationState.asStateFlow()
+    private var fareSessionsObserverJob: Job? = null
+    private var activeFareSessionObserverJob: Job? = null
 
     private var lastResendToken: Any? = null
     private var cooldownJob: Job? = null
@@ -184,9 +200,15 @@ class MumbaiShareAutoViewModel(
                             )
                         }
                         attachDriverRoutesListener(sessionUser.uid)
+                        attachFareNegotiationListener(sessionUser.uid)
                         refreshAuthenticatedProfileFromFirestore(sessionUser.uid)
                     } else {
                         driverRoutesObserverJob?.cancel()
+                        fareSessionsObserverJob?.cancel()
+                        fareSessionsObserverJob = null
+                        activeFareSessionObserverJob?.cancel()
+                        activeFareSessionObserverJob = null
+                        _fareNegotiationState.value = FareNegotiationUiState()
                         driverRoutesObserverJob = null
                         _driverLiveRoutes.value = emptyList()
                         queueObserverJob?.cancel()
@@ -572,6 +594,7 @@ class MumbaiShareAutoViewModel(
                             errorMessage = null
                         )
                     }
+                    attachFareNegotiationListener(uid)
                 }
             }
 
@@ -680,6 +703,76 @@ class MumbaiShareAutoViewModel(
         }
     }
 
+    private fun attachFareNegotiationListener(uid: String) {
+        val repository = fareNegotiationRepository ?: return
+        fareSessionsObserverJob?.cancel()
+        fareSessionsObserverJob = viewModelScope.launch {
+            val role = _phoneAuthState.value.authenticatedProfile?.role
+            val stream = if (role == AuthUserRole.DRIVER) repository.observeDriverSessions(uid)
+                else repository.observePassengerSessions(uid)
+            stream.collect { sessions ->
+                _fareNegotiationState.update { it.copy(sessions = sessions, error = null) }
+            }
+        }
+    }
+
+    fun createPassengerFareOffer(
+        routeId: String,
+        passengerCount: Int,
+        pickupStand: String,
+        destination: String,
+        totalGroupFareInr: Double
+    ) {
+        val repository = fareNegotiationRepository
+        val auth = _phoneAuthState.value
+        if (repository == null || auth.authenticatedProfile?.role != AuthUserRole.PASSENGER) {
+            _fareNegotiationState.update { it.copy(error = "Passenger sign-in and Firebase configuration are required.") }
+            return
+        }
+        viewModelScope.launch {
+            _fareNegotiationState.update { it.copy(isLoading = true, error = null, message = null) }
+            repository.createPassengerOffer(routeId, passengerCount, pickupStand, destination, totalGroupFareInr)
+                .onSuccess { session ->
+                    _fareNegotiationState.update { it.copy(isLoading = false, activeSession = session, message = "Total group fare offer sent to driver.") }
+                    observeFareNegotiation(session.bookingId)
+                }.onFailure { error ->
+                    _fareNegotiationState.update { it.copy(isLoading = false, error = error.message ?: "Could not send fare offer.") }
+                }
+        }
+    }
+
+    fun observeFareNegotiation(bookingId: String) {
+        val repository = fareNegotiationRepository ?: return
+        activeFareSessionObserverJob?.cancel()
+        activeFareSessionObserverJob = viewModelScope.launch {
+            repository.observeSession(bookingId).collect { session ->
+                _fareNegotiationState.update { it.copy(activeSession = session) }
+            }
+        }
+    }
+
+    private fun runFareAction(action: suspend (FareNegotiationFirestoreRepository) -> Result<FareNegotiationSession>) {
+        val repository = fareNegotiationRepository ?: run {
+            _fareNegotiationState.update { it.copy(error = "Fare negotiation service is not configured.") }
+            return
+        }
+        viewModelScope.launch {
+            _fareNegotiationState.update { it.copy(isLoading = true, error = null, message = null) }
+            action(repository).onSuccess { session ->
+                _fareNegotiationState.update { it.copy(isLoading = false, activeSession = session, message = "Fare negotiation updated.") }
+            }.onFailure { error ->
+                _fareNegotiationState.update { it.copy(isLoading = false, error = error.message ?: "Fare action failed.") }
+            }
+        }
+    }
+
+    fun driverAcceptFare(bookingId: String) = runFareAction { it.driverAccept(bookingId) }
+    fun driverCounterFare(bookingId: String, totalGroupFareInr: Double) = runFareAction { it.driverCounter(bookingId, totalGroupFareInr) }
+    fun driverDeclineFare(bookingId: String) = runFareAction { it.driverDecline(bookingId) }
+    fun passengerAcceptCounter(bookingId: String) = runFareAction { it.passengerAcceptCounter(bookingId) }
+    fun passengerDeclineCounter(bookingId: String) = runFareAction { it.passengerDeclineCounter(bookingId) }
+    fun cancelFareNegotiation(bookingId: String) = runFareAction { it.cancel(bookingId) }
+
     fun publishLiveRouteToFirestore(
         pickupStation: String,
         pickupSide: StationSide?,
@@ -771,6 +864,7 @@ class MumbaiShareAutoViewModel(
     fun lockSeatOnLiveRoute(
         postingId: String,
         seatsRequested: Int,
+        agreedTotalFare: Double? = null,
         onSuccess: (RouteSeatLock) -> Unit = {}
     ) {
         val gateway = liveRoutesGateway
@@ -802,7 +896,7 @@ class MumbaiShareAutoViewModel(
             _liveRouteActionState.update {
                 it.copy(lockingPostingId = postingId, lastActionError = null, lastActionMessage = null)
             }
-            when (val result = gateway.lockSeatTransaction(postingId, passengerUid, seatsRequested)) {
+            when (val result = gateway.lockSeatTransaction(postingId, passengerUid, seatsRequested, agreedTotalFare)) {
                 is FirestoreActionResult.Success -> {
                     _liveRouteActionState.update {
                         it.copy(
@@ -925,6 +1019,8 @@ class MumbaiShareAutoViewModel(
         cooldownJob?.cancel()
         driverRoutesObserverJob?.cancel()
         queueObserverJob?.cancel()
+        fareSessionsObserverJob?.cancel()
+        activeFareSessionObserverJob?.cancel()
         phoneAuthGateway?.unregister()
         super.onCleared()
     }
@@ -934,7 +1030,8 @@ class MumbaiShareAutoViewModel(
         private val favoriteRouteRepository: FavoriteRouteRepository,
         private val phoneAuthGateway: PhoneAuthGateway? = null,
         private val userProfileRemoteDataSource: UserProfileRemoteDataSource? = null,
-        private val liveRoutesGateway: LiveRoutesDataSource? = null
+        private val liveRoutesGateway: LiveRoutesDataSource? = null,
+        private val fareNegotiationRepository: FareNegotiationFirestoreRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -967,7 +1064,15 @@ class MumbaiShareAutoViewModel(
                 ),
                 phoneAuthGateway = phoneAuthGateway ?: FirebasePhoneAuthGateway(appContext),
                 userProfileRemoteDataSource = userProfileRemoteDataSource ?: FirestoreUserProfileRepository(appContext),
-                liveRoutesGateway = liveRoutesGateway ?: FirebaseFirestoreRepository(appContext)
+                liveRoutesGateway = liveRoutesGateway ?: FirebaseFirestoreRepository(appContext),
+                fareNegotiationRepository = fareNegotiationRepository ?: runCatching {
+                    if (FirebaseRuntimeInspector.isFirebaseInitialized(appContext)) {
+                        FareNegotiationFirestoreRepository(
+                            com.google.firebase.firestore.FirebaseFirestore.getInstance(),
+                            com.google.firebase.auth.FirebaseAuth.getInstance()
+                        )
+                    } else null
+                }.getOrNull()
             ) as T
         }
     }

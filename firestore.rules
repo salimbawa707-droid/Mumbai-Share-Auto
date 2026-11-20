@@ -326,5 +326,94 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
+
+    // Passenger-first group fare negotiation. Participants may read; only the authenticated
+    // passenger creates the initial offer. Every later write appends exactly one event.
+    function validFareEvent(event, expectedActor) {
+      return event is map &&
+        event.keys().hasAll(['eventId', 'sequence', 'actor', 'type', 'totalFareInr', 'createdAtEpochMs']) &&
+        event.eventId is string && event.eventId.size() >= 1 && event.eventId.size() <= 64 &&
+        event.sequence is int && event.actor == expectedActor &&
+        event.createdAtEpochMs is int &&
+        (event.totalFareInr == null || (event.totalFareInr is number && event.totalFareInr > 0));
+    }
+
+    function validFareNegotiationCreate(data, bookingId) {
+      return isSignedIn() &&
+        data.keys().hasAll(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
+          'pickupStand', 'destination', 'events', 'status', 'agreedTotalFareInr', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
+          'pickupStand', 'destination', 'events', 'status', 'agreedTotalFareInr', 'createdAt', 'updatedAt']) &&
+        data.bookingId == bookingId &&
+        data.passengerUid == request.auth.uid &&
+        data.driverUid != request.auth.uid &&
+        data.routeId is string && data.routeId.size() > 0 &&
+        exists(/databases/$(database)/documents/active_routes/$(data.routeId)) &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.driverUid == data.driverUid &&
+        data.passengerCount is int && data.passengerCount >= 1 && data.passengerCount <= 3 &&
+        data.pickupStand is string && data.pickupStand.size() >= 3 &&
+        data.destination is string && data.destination.size() >= 3 &&
+        data.pickupStand != data.destination &&
+        data.events is list && data.events.size() == 1 &&
+        validFareEvent(data.events[0], 'PASSENGER') &&
+        data.events[0].type == 'PASSENGER_PROPOSED' &&
+        data.status == 'OPEN' && data.agreedTotalFareInr == null &&
+        data.createdAt == request.time && data.updatedAt == request.time;
+    }
+
+    function validFareNegotiationUpdate() {
+      let before = existing();
+      let after = incoming();
+      let last = after.events[after.events.size() - 1];
+      let passengerAction = request.auth.uid == before.passengerUid;
+      let driverAction = request.auth.uid == before.driverUid;
+      return (passengerAction || driverAction) &&
+        after.diff(before).affectedKeys().hasOnly(['events', 'status', 'agreedTotalFareInr', 'updatedAt']) &&
+        after.bookingId == before.bookingId &&
+        after.routeId == before.routeId &&
+        after.passengerUid == before.passengerUid &&
+        after.driverUid == before.driverUid &&
+        after.passengerCount == before.passengerCount &&
+        after.pickupStand == before.pickupStand &&
+        after.destination == before.destination &&
+        after.events is list &&
+        after.events.size() == before.events.size() + 1 &&
+        after.events.hasAll(before.events) &&
+        last.sequence == after.events.size() &&
+        last.createdAtEpochMs is int &&
+        after.updatedAt == request.time &&
+        (
+          (before.status == 'OPEN' && driverAction &&
+            validFareEvent(last, 'DRIVER') &&
+            ((last.type == 'DRIVER_ACCEPTED' && after.status == 'AGREED' &&
+              last.totalFareInr == before.events[0].totalFareInr &&
+              after.agreedTotalFareInr == last.totalFareInr) ||
+             (last.type == 'DRIVER_COUNTERED' && after.status == 'COUNTERED' &&
+              last.totalFareInr is number && last.totalFareInr > 0 &&
+              after.agreedTotalFareInr == null) ||
+             (last.type == 'DRIVER_DECLINED' && after.status == 'DECLINED' &&
+              last.totalFareInr == null && after.agreedTotalFareInr == null))) ||
+          (before.status == 'COUNTERED' && passengerAction &&
+            validFareEvent(last, 'PASSENGER') &&
+            ((last.type == 'PASSENGER_ACCEPTED_COUNTER' && after.status == 'AGREED' &&
+              last.totalFareInr == before.events[before.events.size() - 1].totalFareInr &&
+              after.agreedTotalFareInr == last.totalFareInr) ||
+             (last.type == 'PASSENGER_DECLINED_COUNTER' && after.status == 'DECLINED' &&
+              last.totalFareInr == null && after.agreedTotalFareInr == null))) ||
+          ((before.status == 'OPEN' || before.status == 'COUNTERED') &&
+            validFareEvent(last, passengerAction ? 'PASSENGER' : 'DRIVER') &&
+            last.type == 'CANCELLED' && last.totalFareInr == null &&
+            after.status == 'CANCELLED' && after.agreedTotalFareInr == null)
+        );
+    }
+
+    match /fare_negotiations/{bookingId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.passengerUid ||
+         request.auth.uid == resource.data.driverUid);
+      allow create: if isValidId(bookingId) && validFareNegotiationCreate(incoming(), bookingId);
+      allow update: if isValidId(bookingId) && validFareNegotiationUpdate();
+      allow delete: if false;
+    }
   }
 }
