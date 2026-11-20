@@ -79,6 +79,13 @@ class FareNegotiationFirestoreRepository(
             IllegalStateException("Sign in before sending a fare offer.")
         )
         val route = firestore.collection("active_routes").document(routeId.trim()).get().await()
+        if (!route.exists() || route.getBoolean("isActive") != true) {
+            return Result.failure(IllegalStateException("This driver route is no longer active."))
+        }
+        val availableSeats = route.getLong("availableSeats")?.toInt() ?: 0
+        if (passengerCount !in 1..3 || passengerCount > availableSeats) {
+            return Result.failure(IllegalArgumentException("The selected route does not have enough seats for this passenger group."))
+        }
         val driverUid = route.getString("driverUid")
             ?: return Result.failure(IllegalStateException("Driver route was not found."))
         val bookingId = "FARE_${UUID.randomUUID().toString().replace("-", "").take(20).uppercase()}"
