@@ -31,6 +31,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function hasUserRole(role) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
     function isValidIndianPhone(phone) {
       return phone is string &&
         phone.size() == 13 &&
@@ -142,7 +148,8 @@ service cloud.firestore {
     }
 
     function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute) {
-      return data.keys().hasAll([
+      return hasUserRole('PASSENGER') &&
+        data.keys().hasAll([
           'lockId',
           'postingId',
           'passengerUid',
@@ -216,6 +223,7 @@ service cloud.firestore {
 
       allow create: if isValidId(postingId) &&
         isSignedIn() &&
+        hasUserRole('DRIVER') &&
         isValidLiveAutoRouteCreate(incoming(), postingId);
 
       // Driver can close route; signed-in passenger (non-driver) can atomically lock/release seats
