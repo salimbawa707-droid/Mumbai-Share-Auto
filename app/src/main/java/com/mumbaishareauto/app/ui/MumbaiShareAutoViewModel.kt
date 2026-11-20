@@ -594,6 +594,7 @@ class MumbaiShareAutoViewModel(
                             errorMessage = null
                         )
                     }
+                    attachFareNegotiationListener(uid)
                 }
             }
 
