@@ -125,6 +125,14 @@ private fun FareNegotiationSessionCard(
                     OutlinedButton(onClick = onPassengerDecline, modifier = Modifier.weight(1f)) { Text("Decline") }
                 }
             }
+            if (role == AuthUserRole.PASSENGER && session.status.name == "AGREED" && session.agreedTotalFareInr != null) {
+                Text("Driver accepted. Final group fare: ₹${session.agreedTotalFareInr}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Button(
+                    onClick = { viewModel.lockSeatOnLiveRoute(session.routeId, session.passengerCount, session.agreedTotalFareInr) },
+                    enabled = !state.isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Confirm & Reserve ${session.passengerCount} Seat(s)") }
+            }
             if (session.status.name == "OPEN" || session.status.name == "COUNTERED") {
                 OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel Offer") }
             }
