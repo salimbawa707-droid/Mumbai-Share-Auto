@@ -58,3 +58,15 @@ Run from the repository root:
 ```
 
 The GitHub Actions Android workflow runs from the same root directory and uploads APKs, reports, and test results.
+
+## Firebase setup and Firestore rules
+1. Register Android package `com.mumbaishareauto.app` in Firebase and place the downloaded `google-services.json` in `app/google-services.json`.
+2. Enable Phone sign-in in Firebase Authentication and configure the SMS region policy for India. Add the debug/release SHA-1 and SHA-256 fingerprints in Firebase Project Settings.
+3. Create the default Cloud Firestore database in the Mumbai region (`asia-south1`) when available.
+4. Install Firebase CLI, sign in with the Firebase account, then run from the repository root:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The repository includes `firebase.json` and `firestore.rules` for this deployment. Keep Firestore in production mode; do not replace these rules with public test-mode rules. Phone OTP SMS may require a linked Cloud Billing account and can incur charges.
