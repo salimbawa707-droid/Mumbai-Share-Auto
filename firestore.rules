@@ -228,12 +228,10 @@ service cloud.firestore {
           incoming().totalBookingFare == existing().totalBookingFare &&
           incoming().createdAt == existing().createdAt &&
           incoming().isLegallyVerified == existing().isLegallyVerified &&
+          incoming().availableSeats == existing().availableSeats &&
           incoming().updatedAt == request.time &&
-          incoming().availableSeats is int &&
-          incoming().availableSeats >= 0 &&
-          incoming().availableSeats <= existing().totalCapacitySeats &&
-          incoming().isActive is bool &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'availableSeats', 'updatedAt'])
+          incoming().isActive == false &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt'])
         ) || (
           request.auth.uid != existing().driverUid &&
           incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'updatedAt']) &&
