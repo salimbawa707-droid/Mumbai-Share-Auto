@@ -461,6 +461,7 @@ fun LiveAutoRouteCard(
     onReleaseSeat: () -> Unit,
     onToggleQueueView: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedSeats by rememberSaveable(route.postingId, route.availableSeats) {
         mutableIntStateOf(1.coerceAtMost(route.availableSeats.coerceAtLeast(1)))
     }
@@ -547,6 +548,24 @@ fun LiveAutoRouteCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            if (!isOwnDriverRoute) {
+                OutlinedButton(
+                    onClick = { ShareUtils.openDriverPickupInMaps(context, route) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                ) {
+                    Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open Driver Pickup in Maps")
+                }
+                Text(
+                    text = "Navigate to the driver's designated pickup stand. This is not live GPS tracking.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             if (!isOwnDriverRoute && route.availableSeats > 0 && !userHoldsActiveLock) {
                 Row(
