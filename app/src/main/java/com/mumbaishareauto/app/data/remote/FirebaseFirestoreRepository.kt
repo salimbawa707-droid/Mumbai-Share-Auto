@@ -144,8 +144,11 @@ data class LiveAutoRoute(
 
             val totalCapacity = (data[FIELD_TOTAL_CAPACITY_SEATS] as? Number)?.toInt() ?: return null
             val available = (data[FIELD_AVAILABLE_SEATS] as? Number)?.toInt() ?: return null
-            val queueCount = ((data[FIELD_ACTIVE_QUEUE_COUNT] as? Number)?.toInt() ?: 0).coerceAtLeast(0)
-            val isActive = (data[FIELD_IS_ACTIVE] as? Boolean) ?: true
+            // Reject corrupt inventory instead of coercing it into a plausible-looking seat count.
+            if (totalCapacity !in MIN_SEATS..MAX_SEATS || available !in 0..totalCapacity) return null
+            val queueCount = ((data[FIELD_ACTIVE_QUEUE_COUNT] as? Number)?.toInt() ?: 0).takeIf { it >= 0 } ?: return null
+            // Missing active state is unknown; never silently advertise an unverified route as active.
+            val isActive = data[FIELD_IS_ACTIVE] as? Boolean ?: return null
             val isLegallyVerified = (data[FIELD_IS_LEGALLY_VERIFIED] as? Boolean) ?: false
             val plate = (data[FIELD_DRIVER_AUTO_REG_NUMBER] as? String)?.trim()?.ifEmpty { null }
 
@@ -159,8 +162,8 @@ data class LiveAutoRoute(
                 destination = destination,
                 viaPoints = viaPoints,
                 totalBookingFare = totalFare,
-                totalCapacitySeats = totalCapacity.coerceIn(MIN_SEATS, MAX_SEATS),
-                availableSeats = available.coerceIn(0, MAX_SEATS),
+                totalCapacitySeats = totalCapacity,
+                availableSeats = available,
                 activeQueueCount = queueCount,
                 isActive = isActive,
                 isLegallyVerified = isLegallyVerified,
