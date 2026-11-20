@@ -511,6 +511,7 @@ fun PassengerBookingScreen(
                                         isReleasing = liveRouteActionState.releasingPostingId == offer.postingId,
                                         isQueueExpanded = isSelectedQueue,
                                         queueLocks = if (isSelectedQueue) liveRouteActionState.selectedQueueLocks else emptyList(),
+                                        allowSeatLock = false,
                                         onLockSeats = { seats -> onLockSeat(offer.postingId, seats) },
                                         onReleaseSeat = { onReleaseSeat(offer.postingId) },
                                         onToggleQueueView = {
