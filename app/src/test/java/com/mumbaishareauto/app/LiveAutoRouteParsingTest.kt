@@ -6,6 +6,7 @@ import com.mumbaishareauto.app.data.remote.FirestoreActionResult
 import com.mumbaishareauto.app.model.StationSide
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 
@@ -58,7 +59,7 @@ class LiveAutoRouteParsingTest {
             seatsRequested = 2
         )
 
-        assert(result is FirestoreActionResult.Success)
+        assertTrue(result is FirestoreActionResult.Success)
         val lock = (result as FirestoreActionResult.Success).data.createdOrUpdatedLock
         assertEquals(77.0, lock.agreedTotalFare, 0.0)
         assertEquals(2, lock.seatsLocked)
@@ -73,6 +74,6 @@ class LiveAutoRouteParsingTest {
             passengerUid = "passenger_2",
             seatsRequested = 4
         )
-        assert(result is FirestoreActionResult.Failure)
+        assertTrue(result is FirestoreActionResult.Failure)
     }
 }
