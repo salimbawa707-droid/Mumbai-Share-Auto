@@ -902,6 +902,14 @@ class MumbaiShareAutoViewModel(
         notificationsRepo.clearError()
     }
 
+    override fun onCleared() {
+        cooldownJob?.cancel()
+        driverRoutesObserverJob?.cancel()
+        queueObserverJob?.cancel()
+        phoneAuthGateway?.unregister()
+        super.onCleared()
+    }
+
     class Factory(
         private val context: Context,
         private val favoriteRouteRepository: FavoriteRouteRepository,
