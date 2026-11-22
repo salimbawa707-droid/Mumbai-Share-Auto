@@ -440,6 +440,9 @@ service cloud.firestore {
         data.routeId is string && data.routeId.size() > 0 &&
         exists(/databases/$(database)/documents/active_routes/$(data.routeId)) &&
         get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.driverUid == data.driverUid &&
+        data.pickupStand == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.designatedStand &&
+        (data.destination == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.destination ||
+          data.destination in get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.viaPoints) &&
         data.passengerCount is int && data.passengerCount >= 1 && data.passengerCount <= 3 &&
         data.pickupStand is string && data.pickupStand.size() >= 3 &&
         data.destination is string && data.destination.size() >= 3 &&
