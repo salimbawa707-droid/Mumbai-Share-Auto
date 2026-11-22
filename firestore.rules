@@ -31,6 +31,14 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Admin identities are provisioned only by trusted project administrators through
+    // Firebase Console / Admin SDK. Client SDKs cannot read or write this collection.
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+    }
+
     function hasUserRole(role) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
@@ -147,7 +155,7 @@ service cloud.firestore {
         data.updatedAt == request.time;
     }
 
-    function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute) {
+    function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute, negotiation) {
       return hasUserRole('PASSENGER') &&
         data.keys().hasAll([
           'lockId',
@@ -156,6 +164,7 @@ service cloud.firestore {
           'driverUid',
           'seatsLocked',
           'agreedTotalFare',
+          'negotiationId',
           'queuePosition',
           'status',
           'lockedAt',
@@ -168,6 +177,7 @@ service cloud.firestore {
           'driverUid',
           'seatsLocked',
           'agreedTotalFare',
+          'negotiationId',
           'queuePosition',
           'status',
           'lockedAt',
@@ -182,7 +192,17 @@ service cloud.firestore {
         data.seatsLocked >= 1 &&
         data.seatsLocked <= 3 &&
         data.agreedTotalFare is number &&
-        data.agreedTotalFare == parentRoute.data.totalBookingFare &&
+        data.agreedTotalFare > 0 &&
+        data.negotiationId is string &&
+        data.negotiationId.size() >= 1 &&
+        data.negotiationId.size() <= 128 &&
+        negotiation.bookingId == data.negotiationId &&
+        negotiation.status == 'AGREED' &&
+        negotiation.passengerUid == request.auth.uid &&
+        negotiation.driverUid == parentRoute.data.driverUid &&
+        negotiation.routeId == postingId &&
+        negotiation.passengerCount == data.seatsLocked &&
+        negotiation.agreedTotalFareInr == data.agreedTotalFare &&
         data.queuePosition is int &&
         data.queuePosition >= 1 &&
         data.status == 'LOCKED' &&
@@ -190,29 +210,80 @@ service cloud.firestore {
         data.updatedAt == request.time;
     }
 
+    // No client can self-provision an administrator identity.
+    match /admins/{adminUid} {
+      allow read, write: if false;
+    }
+
+    // Driver approval is a separate trusted workflow. Phone OTP proves phone possession,
+    // not vehicle ownership, permit validity, or commercial-driver authorization.
+    match /driver_applications/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if false;
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        incoming().keys().hasAll(['uid', 'phoneNumber', 'autoRegNumber', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['uid', 'phoneNumber', 'autoRegNumber', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().uid == request.auth.uid &&
+        isValidIndianPhone(incoming().phoneNumber) &&
+        matchesVerifiedPhoneClaim(incoming().phoneNumber) &&
+        isValidAutoRegNumber(incoming().autoRegNumber) &&
+        incoming().status == 'PENDING' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        incoming().uid == existing().uid &&
+        incoming().phoneNumber == existing().phoneNumber &&
+        incoming().autoRegNumber == existing().autoRegNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().status in ['APPROVED', 'REJECTED'] &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if false;
+    }
+
     // Owner-only user profile storage containing PII (+91 phone number and Driver plate)
     match /users/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;
 
+      // New accounts always start as passengers. Driver role is never self-assigned.
       allow create: if isValidId(userId) &&
         isOwner(userId) &&
         isValidUserProfile(incoming(), userId) &&
+        incoming().role == 'PASSENGER' &&
+        !('driverAutoRegNumber' in incoming()) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isValidId(userId) &&
-        isOwner(userId) &&
-        isValidUserProfile(incoming(), userId) &&
-        incoming().uid == existing().uid &&
-        incoming().phoneNumber == existing().phoneNumber &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'role',
-          'driverAutoRegNumber',
-          'updatedAt'
-        ]);
+      // Owners may update only the server timestamp. Only a trusted admin can approve
+      // a driver, and only after the corresponding application has been approved.
+      allow update: if isValidId(userId) && (
+        (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().role == existing().role &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
+        ) ||
+        (
+          isAdmin() &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().createdAt == existing().createdAt &&
+          existing().role == 'PASSENGER' &&
+          incoming().role == 'DRIVER' &&
+          'driverAutoRegNumber' in incoming() &&
+          isValidAutoRegNumber(incoming().driverAutoRegNumber) &&
+          exists(/databases/$(database)/documents/driver_applications/$(userId)) &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.status == 'APPROVED' &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.autoRegNumber == incoming().driverAutoRegNumber &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'driverAutoRegNumber', 'updatedAt'])
+        )
+      );
 
       allow delete: if isValidId(userId) && isOwner(userId);
     }
@@ -263,7 +334,7 @@ service cloud.firestore {
             // Atomic seat release: restore seats when seat_locks/{uid} moves from LOCKED to RELEASED
             (
               incoming().availableSeats > existing().availableSeats &&
-              incoming().activeQueueCount == existing().activeQueueCount &&
+              incoming().activeQueueCount == existing().activeQueueCount - 1 &&
               get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'RELEASED' &&
               (incoming().availableSeats - existing().availableSeats) == get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked
@@ -287,11 +358,14 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
           get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
           get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
+          isValidId(incoming().negotiationId) &&
+          exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
           isValidSeatLockPayload(
             incoming(),
             postingId,
             passengerUid,
-            get(/databases/$(database)/documents/active_routes/$(postingId))
+            get(/databases/$(database)/documents/active_routes/$(postingId)),
+            get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
           ) &&
           getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
             (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats - incoming().seatsLocked);
@@ -314,11 +388,14 @@ service cloud.firestore {
               existing().status == 'RELEASED' &&
               get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
               get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
+              isValidId(incoming().negotiationId) &&
+              exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
               isValidSeatLockPayload(
                 incoming(),
                 postingId,
                 passengerUid,
-                get(/databases/$(database)/documents/active_routes/$(postingId))
+                get(/databases/$(database)/documents/active_routes/$(postingId)),
+                get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
               )
             )
           );
@@ -356,6 +433,8 @@ service cloud.firestore {
         data.pickupStand != data.destination &&
         data.events is list && data.events.size() == 1 &&
         validFareEvent(data.events[0], 'PASSENGER') &&
+        data.events[0].totalFareInr is number &&
+        data.events[0].totalFareInr > 0 &&
         data.events[0].type == 'PASSENGER_PROPOSED' &&
         data.status == 'OPEN' && data.agreedTotalFareInr == null &&
         data.createdAt == request.time && data.updatedAt == request.time;
