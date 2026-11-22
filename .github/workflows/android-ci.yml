@@ -83,6 +83,10 @@ jobs:
     name: Android instrumentation tests on emulator
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # GitHub hosted Linux runners do not expose KVM on this runner pool.
+      # Force QEMU TCG instead of waiting forever for an unavailable accelerator.
+      ANDROID_I_WANT_MY_TCG: "yes"
 
     steps:
       - name: Checkout repository
@@ -106,4 +110,5 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          emulator-boot-timeout: 1200
           script: ./gradlew connectedDebugAndroidTest --no-daemon
