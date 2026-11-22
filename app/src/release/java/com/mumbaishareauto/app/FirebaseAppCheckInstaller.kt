@@ -9,10 +9,15 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
  * Release builds use Play Integrity for Firebase App Check attestation.
  */
 object FirebaseAppCheckInstaller {
+    @Volatile
+    private var installed = false
+
+    @Synchronized
     fun install(context: Context) {
-        if (FirebaseApp.getApps(context.applicationContext).isEmpty()) return
+        if (installed || FirebaseApp.getApps(context.applicationContext).isEmpty()) return
         FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             PlayIntegrityAppCheckProviderFactory.getInstance()
         )
+        installed = true
     }
 }
