@@ -190,7 +190,8 @@ data class RouteSeatLock(
     val queuePosition: Int,
     val status: String = STATUS_LOCKED,
     val lockedAtMs: Long? = null,
-    val updatedAtMs: Long? = null
+    val updatedAtMs: Long? = null,
+    val driverAutoRegNumber: String? = null
 ) {
     fun toBaseFirestoreFields(): Map<String, Any> = linkedMapOf<String, Any>(
         FIELD_LOCK_ID to lockId,
@@ -203,6 +204,7 @@ data class RouteSeatLock(
         FIELD_STATUS to status
     ).apply {
         negotiationId?.takeIf { it.isNotBlank() }?.let { put(FIELD_NEGOTIATION_ID, it) }
+        driverAutoRegNumber?.takeIf { it.isNotBlank() }?.let { put(FIELD_DRIVER_AUTO_REG_NUMBER, it) }
     }
 
     companion object {
@@ -214,6 +216,7 @@ data class RouteSeatLock(
         const val FIELD_PASSENGER_UID = "passengerUid"
         const val FIELD_DRIVER_UID = "driverUid"
         const val FIELD_NEGOTIATION_ID = "negotiationId"
+        const val FIELD_DRIVER_AUTO_REG_NUMBER = "driverAutoRegNumber"
         const val FIELD_SEATS_LOCKED = "seatsLocked"
         const val FIELD_AGREED_TOTAL_FARE = "agreedTotalFare"
         const val FIELD_QUEUE_POSITION = "queuePosition"
@@ -249,7 +252,8 @@ data class RouteSeatLock(
                 queuePosition = queuePosition,
                 status = status,
                 lockedAtMs = lockedAtMs,
-                updatedAtMs = updatedAtMs
+                updatedAtMs = updatedAtMs,
+                driverAutoRegNumber = (data[FIELD_DRIVER_AUTO_REG_NUMBER] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -496,7 +500,8 @@ object LiveRouteTransactionEngine {
         )
         val releasedLock = existingLock.copy(
             status = RouteSeatLock.STATUS_RELEASED,
-            updatedAtMs = nowMs
+            updatedAtMs = nowMs,
+            driverAutoRegNumber = null
         )
         return FirestoreActionResult.Success(SeatLockTransitionOutput(updatedRoute, releasedLock))
     }
@@ -519,6 +524,11 @@ interface LiveRoutesDataSource {
         postingId: String,
         passengerUid: String
     ): FirestoreActionResult<Unit>
+    suspend fun shareVehicleNumberWithPassenger(
+        postingId: String,
+        passengerUid: String,
+        driverAutoRegNumber: String
+    ): FirestoreActionResult<Unit> = FirestoreActionResult.Failure("Vehicle-number sharing is unavailable.")
     suspend fun deactivateDriverRoute(
         postingId: String,
         driverUid: String
@@ -871,6 +881,65 @@ class FirebaseFirestoreRepository(
         }
     }
 
+    override suspend fun shareVehicleNumberWithPassenger(
+        postingId: String,
+        passengerUid: String,
+        driverAutoRegNumber: String
+    ): FirestoreActionResult<Unit> = withContext(ioDispatcher) {
+        val cleanPostingId = postingId.trim()
+        val cleanPassengerUid = passengerUid.trim()
+        val cleanPlate = driverAutoRegNumber.trim().uppercase()
+        val db = firestore ?: return@withContext FirestoreActionResult.Failure(
+            message = FirebaseRuntimeInspector.UNCONFIGURED_MESSAGE
+        )
+        if (cleanPostingId.isEmpty() || cleanPassengerUid.isEmpty() ||
+            !Regex("^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$").matches(cleanPlate)
+        ) {
+            return@withContext FirestoreActionResult.Failure("A valid route, passenger and vehicle registration are required.")
+        }
+        val signedInUid = auth?.currentUser?.uid
+        if (signedInUid.isNullOrBlank()) {
+            return@withContext FirestoreActionResult.Failure("Sign in with the approved Driver account to share the vehicle number.")
+        }
+        val routeRef = db.collection(LiveAutoRoute.COLLECTION_ACTIVE_ROUTES).document(cleanPostingId)
+        val lockRef = routeRef.collection(LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS).document(cleanPassengerUid)
+        val path = "active_routes/" + cleanPostingId + "/seat_locks/" + cleanPassengerUid
+        try {
+            db.runTransaction { tx ->
+                val routeSnap = tx.get(routeRef)
+                val lockSnap = tx.get(lockRef)
+                val route = routeSnap.data
+                val lock = lockSnap.data
+                if (!routeSnap.exists() || route?.get(LiveAutoRoute.FIELD_DRIVER_UID) != signedInUid) {
+                    throw SeatLockConflictException("Only the driver who owns this route can share its vehicle number.", false)
+                }
+                if (!lockSnap.exists() || lock?.get(RouteSeatLock.FIELD_STATUS) != RouteSeatLock.STATUS_LOCKED ||
+                    lock[RouteSeatLock.FIELD_DRIVER_UID] != signedInUid ||
+                    lock[RouteSeatLock.FIELD_PASSENGER_UID] != cleanPassengerUid
+                ) {
+                    throw SeatLockConflictException("Vehicle number can be shared only with a passenger who currently holds a locked seat.", false)
+                }
+                if (!lock[RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER].toString().isNullOrBlank()) {
+                    throw SeatLockConflictException("Vehicle number has already been shared with this passenger.", false)
+                }
+                tx.update(
+                    lockRef,
+                    mapOf(
+                        RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER to cleanPlate,
+                        RouteSeatLock.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    )
+                )
+            }.await()
+            FirestoreActionResult.Success(Unit)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (conflict: SeatLockConflictException) {
+            FirestoreActionResult.Failure(conflict.userMessage, conflict.isDoubleBookingConflict)
+        } catch (e: Exception) {
+            failureFromException(e, FirestoreOperationType.UPDATE, path)
+        }
+    }
+
     override suspend fun releaseSeatTransaction(
         postingId: String,
         passengerUid: String
@@ -931,6 +1000,7 @@ class FirebaseFirestoreRepository(
                             lockRef,
                             mapOf(
                                 RouteSeatLock.FIELD_STATUS to RouteSeatLock.STATUS_RELEASED,
+                                RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER to FieldValue.delete(),
                                 RouteSeatLock.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                             )
                         )
