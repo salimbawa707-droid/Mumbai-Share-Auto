@@ -444,13 +444,20 @@ test("approved route driver can reveal vehicle number only to a currently locked
     updatedAt: new Date()
   });
   const driver = user(driverUid, { phone_number: "+919876543211" });
-  await assertSucceeds(updateDoc(doc(driver, `active_routes/${routeId}/seat_locks/${passengerUid}`), {
+  const lockRef = doc(driver, `active_routes/${routeId}/seat_locks/${passengerUid}`);
+  await assertFails(updateDoc(lockRef, {
+    driverAutoRegNumber: "MH02XY9999",
+    updatedAt: serverTimestamp()
+  }));
+  await assertSucceeds(updateDoc(lockRef, {
     driverAutoRegNumber: "MH02AB1234",
     updatedAt: serverTimestamp()
   }));
   const passenger = user(passengerUid, { phone_number: phone });
   const revealed = await getDoc(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`));
   assert.equal(revealed.data().driverAutoRegNumber, "MH02AB1234");
+  const unrelatedPassenger = user("unrelated_passenger", { phone_number: "+919876543212" });
+  await assertFails(getDoc(doc(unrelatedPassenger, `active_routes/${routeId}/seat_locks/${passengerUid}`)));
 });
 
 test("passenger cannot forge the driver's vehicle number in their seat lock", async () => {
