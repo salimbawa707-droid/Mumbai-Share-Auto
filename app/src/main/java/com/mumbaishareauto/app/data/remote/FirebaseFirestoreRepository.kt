@@ -919,7 +919,7 @@ class FirebaseFirestoreRepository(
                 ) {
                     throw SeatLockConflictException("Vehicle number can be shared only with a passenger who currently holds a locked seat.", false)
                 }
-                if (!lock[RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER].toString().isNullOrBlank()) {
+                if (!(lock[RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER] as? String).isNullOrBlank()) {
                     throw SeatLockConflictException("Vehicle number has already been shared with this passenger.", false)
                 }
                 tx.update(
