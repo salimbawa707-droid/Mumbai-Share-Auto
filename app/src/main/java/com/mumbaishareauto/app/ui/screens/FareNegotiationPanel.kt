@@ -107,7 +107,12 @@ fun FareNegotiationPanel(
                     onCancel = { viewModel.cancelFareNegotiation(session.bookingId) },
                     isLoading = state.isLoading,
                     onConfirmSeatLock = { routeId, seats, totalFare ->
-                        viewModel.lockSeatOnLiveRoute(routeId, seats, totalFare)
+                        viewModel.lockSeatOnLiveRoute(
+                            postingId = routeId,
+                            seatsRequested = seats,
+                            agreedTotalFare = totalFare,
+                            negotiationId = session.bookingId
+                        )
                     }
                 )
             }
