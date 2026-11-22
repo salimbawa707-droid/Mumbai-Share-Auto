@@ -231,14 +231,27 @@ service cloud.firestore {
         incoming().status == 'PENDING' &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isAdmin() &&
+      allow update: if (
+        isAdmin() &&
         incoming().uid == existing().uid &&
         incoming().phoneNumber == existing().phoneNumber &&
         incoming().autoRegNumber == existing().autoRegNumber &&
         incoming().createdAt == existing().createdAt &&
         incoming().status in ['APPROVED', 'REJECTED'] &&
         incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      ) || (
+        isOwner(userId) &&
+        existing().status == 'REJECTED' &&
+        incoming().uid == existing().uid &&
+        incoming().phoneNumber == existing().phoneNumber &&
+        matchesVerifiedPhoneClaim(incoming().phoneNumber) &&
+        isValidAutoRegNumber(incoming().autoRegNumber) &&
+        incoming().status == 'PENDING' &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['autoRegNumber', 'status', 'updatedAt'])
+      );
       allow delete: if false;
     }
 
