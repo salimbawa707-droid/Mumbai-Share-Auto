@@ -478,7 +478,13 @@ service cloud.firestore {
         after.destination == before.destination &&
         after.events is list &&
         after.events.size() == before.events.size() + 1 &&
-        after.events.hasAll(before.events) &&
+        (
+          (before.events.size() == 1 &&
+            after.events[0] == before.events[0]) ||
+          (before.events.size() == 2 &&
+            after.events[0] == before.events[0] &&
+            after.events[1] == before.events[1])
+        ) &&
         last.sequence == after.events.size() &&
         last.createdAtEpochMs is int &&
         after.updatedAt == request.time &&
