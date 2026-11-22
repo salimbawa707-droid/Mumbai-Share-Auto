@@ -865,6 +865,7 @@ class MumbaiShareAutoViewModel(
         postingId: String,
         seatsRequested: Int,
         agreedTotalFare: Double? = null,
+        negotiationId: String? = null,
         onSuccess: (RouteSeatLock) -> Unit = {}
     ) {
         val gateway = liveRoutesGateway
@@ -896,7 +897,7 @@ class MumbaiShareAutoViewModel(
             _liveRouteActionState.update {
                 it.copy(lockingPostingId = postingId, lastActionError = null, lastActionMessage = null)
             }
-            when (val result = gateway.lockSeatTransaction(postingId, passengerUid, seatsRequested, agreedTotalFare)) {
+            when (val result = gateway.lockSeatTransaction(postingId, passengerUid, seatsRequested, agreedTotalFare, negotiationId)) {
                 is FirestoreActionResult.Success -> {
                     _liveRouteActionState.update {
                         it.copy(
