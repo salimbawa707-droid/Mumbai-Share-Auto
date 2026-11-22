@@ -31,13 +31,22 @@ class NavigationAndScreenTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     private fun skipSplashAndOnboardingIfShown() {
-        composeRule.waitUntil(timeoutMillis = 3_000) {
+        // Emulator TCG can render slowly; onboarding may also already be completed
+        // by a previous test because the same app data is reused within the suite.
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("Skip").assertIsDisplayed()
-                true
+                composeRule.onAllNodesWithText("Skip").fetchSemanticsNodes().isNotEmpty() ||
+                    composeRule.onAllNodesWithText("Find Shared Auto").fetchSemanticsNodes().isNotEmpty()
             }.getOrDefault(false)
         }
-        composeRule.onNodeWithText("Skip").performClick()
+
+        val skipNodes = composeRule.onAllNodesWithText("Skip").fetchSemanticsNodes()
+        if (skipNodes.isNotEmpty()) {
+            composeRule.onNodeWithText("Skip").performClick()
+            composeRule.waitUntil(timeoutMillis = 30_000) {
+                composeRule.onAllNodesWithText("Find Shared Auto").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
     }
 
     @Test
