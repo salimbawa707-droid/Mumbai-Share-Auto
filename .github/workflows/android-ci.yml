@@ -65,8 +65,8 @@ jobs:
           test -s "$KEYSTORE_PATH"
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
 
-      - name: Build Debug and R8 Release APKs
-        run: ./gradlew assembleDebug assembleRelease --no-daemon
+      - name: Compile instrumentation tests and build Debug / R8 Release APKs
+        run: ./gradlew compileDebugAndroidTestKotlin assembleDebug assembleRelease --no-daemon
 
       - name: Upload Android APKs and reports
         if: always()
@@ -79,31 +79,3 @@ jobs:
             app/build/reports/
             app/build/test-results/
 
-  android-instrumentation:
-    name: Android instrumentation tests on emulator
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      - name: Grant executable permission to Gradle wrapper
-        run: chmod +x ./gradlew
-
-      - name: Run Android instrumentation tests on API 35 emulator
-        uses: ReactiveCircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --no-daemon
