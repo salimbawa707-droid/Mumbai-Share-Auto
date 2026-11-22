@@ -89,3 +89,14 @@ The repository owner must still:
 3. Enable and monitor App Check / Play Integrity and Authentication SMS abuse controls in Firebase Console.
 4. Supply the existing app release keystore as GitHub Actions secrets if a signed release APK is required. Keep the keystore private and retain a secure backup.
 5. Test OTP delivery and complete passenger/driver journeys with two real accounts and physical devices, including concurrent booking, cancellation and seat release.
+
+
+## Private vehicle-number sharing after reservation
+
+- Public `active_routes` documents never contain a vehicle registration number.
+- The route owner may share the approved registration number only after a passenger has an active `LOCKED` seat reservation.
+- The number is written to that passenger's private seat-lock document. Only that passenger and the route-owning driver can read that lock.
+- Firestore rules require the sharing account to be the approved route driver and require the submitted plate to match that driver's approved `users/{uid}` profile.
+- Passengers cannot insert or alter the vehicle number themselves.
+- When a passenger releases the seat lock, the number is removed from the lock document.
+- The driver explicitly taps **Share vehicle number privately** in Driver Dashboard; this is not an automatic disclosure.
