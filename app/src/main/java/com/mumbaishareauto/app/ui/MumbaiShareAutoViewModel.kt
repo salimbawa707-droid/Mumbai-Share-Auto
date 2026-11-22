@@ -957,6 +957,45 @@ class MumbaiShareAutoViewModel(
         }
     }
 
+    fun shareVehicleNumberWithPassenger(postingId: String, passengerUid: String) {
+        val gateway = liveRoutesGateway
+        val authState = _phoneAuthState.value
+        val driverUid = authState.signedInUser?.uid
+        val plate = authState.authenticatedProfile?.driverAutoRegNumber
+        if (gateway == null || !gateway.isFirestoreConfigured) {
+            _liveRouteActionState.update {
+                it.copy(lastActionError = FirebaseRuntimeInspector.UNCONFIGURED_MESSAGE, lastActionMessage = null)
+            }
+            return
+        }
+        if (driverUid.isNullOrBlank() || authState.authenticatedProfile?.role != AuthUserRole.DRIVER ||
+            plate.isNullOrBlank()
+        ) {
+            _liveRouteActionState.update {
+                it.copy(lastActionError = "Only an approved Driver profile with a verified vehicle number can share vehicle details.", lastActionMessage = null)
+            }
+            return
+        }
+        viewModelScope.launch {
+            _liveRouteActionState.update {
+                it.copy(lastActionError = null, lastActionMessage = "Sharing vehicle number with the locked passenger...")
+            }
+            when (val result = gateway.shareVehicleNumberWithPassenger(postingId, passengerUid, plate)) {
+                is FirestoreActionResult.Success -> {
+                    _liveRouteActionState.update {
+                        it.copy(lastActionError = null, lastActionMessage = "Vehicle number shared privately with the passenger who locked a seat.")
+                    }
+                    observeRouteQueue(postingId)
+                }
+                is FirestoreActionResult.Failure -> {
+                    _liveRouteActionState.update {
+                        it.copy(lastActionError = result.message, lastActionMessage = null)
+                    }
+                }
+            }
+        }
+    }
+
     fun deactivateDriverLiveRoute(postingId: String) {
         val gateway = liveRoutesGateway ?: return
         val driverUid = _phoneAuthState.value.signedInUser?.uid ?: return
