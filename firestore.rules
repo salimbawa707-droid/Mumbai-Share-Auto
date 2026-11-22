@@ -432,7 +432,7 @@ service cloud.firestore {
     }
 
     function validFareNegotiationCreate(data, bookingId) {
-      return isSignedIn() &&
+      return hasUserRole('PASSENGER') &&
         data.keys().hasAll(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
           'pickupStand', 'destination', 'events', 'status', 'agreedTotalFareInr', 'createdAt', 'updatedAt']) &&
         data.keys().hasOnly(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
@@ -465,8 +465,8 @@ service cloud.firestore {
       let before = existing();
       let after = incoming();
       let last = after.events[after.events.size() - 1];
-      let passengerAction = request.auth.uid == before.passengerUid;
-      let driverAction = request.auth.uid == before.driverUid;
+      let passengerAction = request.auth.uid == before.passengerUid && hasUserRole('PASSENGER');
+      let driverAction = request.auth.uid == before.driverUid && hasUserRole('DRIVER');
       return (passengerAction || driverAction) &&
         after.diff(before).affectedKeys().hasOnly(['events', 'status', 'agreedTotalFareInr', 'updatedAt']) &&
         after.bookingId == before.bookingId &&
