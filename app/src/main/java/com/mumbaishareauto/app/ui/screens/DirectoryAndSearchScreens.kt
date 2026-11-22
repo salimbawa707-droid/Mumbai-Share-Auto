@@ -467,8 +467,10 @@ fun LiveAutoRouteCard(
     var selectedSeats by rememberSaveable(route.postingId, route.availableSeats) {
         mutableIntStateOf(1.coerceAtMost(route.availableSeats.coerceAtLeast(1)))
     }
-    val userHoldsActiveLock = currentAuthUid != null &&
-        queueLocks.any { it.passengerUid == currentAuthUid && it.status == RouteSeatLock.STATUS_LOCKED }
+    val myActiveLock = currentAuthUid?.let { uid ->
+        queueLocks.firstOrNull { it.passengerUid == uid && it.status == RouteSeatLock.STATUS_LOCKED }
+    }
+    val userHoldsActiveLock = myActiveLock != null
     val isOwnDriverRoute = currentAuthUid != null && route.driverUid == currentAuthUid
     val formattedFare = if (route.totalBookingFare % 1.0 == 0.0) {
         String.format(Locale.US, "₹%.0f", route.totalBookingFare)
@@ -543,6 +545,20 @@ fun LiveAutoRouteCard(
                         tone = BadgeTone.NEUTRAL
                     )
                 }
+            }
+
+            if (myActiveLock != null) {
+                val sharedPlate = myActiveLock.driverAutoRegNumber
+                Text(
+                    text = if (sharedPlate.isNullOrBlank()) {
+                        "Seat reserved. The driver can privately share the vehicle number from their Driver Dashboard."
+                    } else {
+                        "Driver vehicle number: ${AuthDomainValidator.formatAutoRegForDisplay(sharedPlate)}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
 
             Text(
