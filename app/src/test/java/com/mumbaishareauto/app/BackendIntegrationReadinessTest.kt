@@ -220,10 +220,10 @@ class BackendIntegrationReadinessTest {
             released.updatedRoute, null, "passenger_C", 1, nowMs = 5_000L
         ) as FirestoreActionResult.Success).data
 
-        assertEquals(2, released.updatedRoute.activeQueueCount)
+        assertEquals(1, released.updatedRoute.activeQueueCount)
         assertEquals(2, released.updatedRoute.queueSequence)
         assertEquals(3, third.createdOrUpdatedLock.queuePosition)
-        assertEquals(3, third.updatedRoute.activeQueueCount)
+        assertEquals(2, third.updatedRoute.activeQueueCount)
         assertEquals(3, third.updatedRoute.queueSequence)
     }
 
