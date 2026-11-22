@@ -104,6 +104,8 @@ class BackendIntegrationReadinessTest {
             existingLock = null,
             passengerUid = "pax_uid_A",
             seatsRequested = 2,
+            agreedTotalFare = 100.0,
+            negotiationId = "FARE_TEST_A",
             nowMs = 2_000L
         )
         assertTrue(lockAResult is FirestoreActionResult.Success)
@@ -111,7 +113,9 @@ class BackendIntegrationReadinessTest {
         assertEquals(1, afterA.updatedRoute.availableSeats)
         assertEquals(1, afterA.updatedRoute.activeQueueCount)
         assertEquals(1, afterA.createdOrUpdatedLock.queuePosition)
-        assertEquals(120.0, afterA.createdOrUpdatedLock.agreedTotalFare, 0.001)
+        assertEquals(1, afterA.updatedRoute.queueSequence)
+        assertEquals("FARE_TEST_A", afterA.createdOrUpdatedLock.negotiationId)
+        assertEquals(100.0, afterA.createdOrUpdatedLock.agreedTotalFare, 0.001)
 
         // Passenger B attempts to lock 2 seats against the post-transaction route -> rejected!
         val overbookB = LiveRouteTransactionEngine.computeSeatLockTransition(
@@ -157,6 +161,7 @@ class BackendIntegrationReadinessTest {
         val afterB = (lockBResult as FirestoreActionResult.Success).data
         assertEquals(0, afterB.updatedRoute.availableSeats)
         assertEquals(2, afterB.updatedRoute.activeQueueCount)
+        assertEquals(2, afterB.updatedRoute.queueSequence)
         assertEquals(2, afterB.createdOrUpdatedLock.queuePosition)
 
         // Passenger C attempts to lock 1 seat when 0 left -> rejected!
@@ -180,7 +185,46 @@ class BackendIntegrationReadinessTest {
         assertTrue(releaseB is FirestoreActionResult.Success)
         val afterRelease = (releaseB as FirestoreActionResult.Success).data
         assertEquals(1, afterRelease.updatedRoute.availableSeats)
+        assertEquals(1, afterRelease.updatedRoute.activeQueueCount)
+        assertEquals(2, afterRelease.updatedRoute.queueSequence)
         assertEquals(RouteSeatLock.STATUS_RELEASED, afterRelease.createdOrUpdatedLock.status)
+    }
+
+
+    @Test
+    fun liveRouteQueuePosition_remainsMonotonicWhenEarlierPassengerReleases() {
+        val route = (LiveRouteTransactionEngine.buildNewLiveRoute(
+            postingId = "ROUTE_QUEUE_01",
+            command = PublishRouteCommand(
+                driverUid = "driver_queue_01",
+                pickupStation = "Kurla",
+                pickupSide = StationSide.WEST,
+                designatedStand = "Kurla West Auto Stand",
+                destination = "BKC",
+                totalBookingFare = 90.0,
+                availableSeats = 3
+            ),
+            nowMs = 1_000L
+        ) as FirestoreActionResult.Success).data
+
+        val first = (LiveRouteTransactionEngine.computeSeatLockTransition(
+            route, null, "passenger_A", 1, nowMs = 2_000L
+        ) as FirestoreActionResult.Success).data
+        val second = (LiveRouteTransactionEngine.computeSeatLockTransition(
+            first.updatedRoute, null, "passenger_B", 1, nowMs = 3_000L
+        ) as FirestoreActionResult.Success).data
+        val released = (LiveRouteTransactionEngine.computeSeatReleaseTransition(
+            second.updatedRoute, first.createdOrUpdatedLock, "passenger_A", nowMs = 4_000L
+        ) as FirestoreActionResult.Success).data
+        val third = (LiveRouteTransactionEngine.computeSeatLockTransition(
+            released.updatedRoute, null, "passenger_C", 1, nowMs = 5_000L
+        ) as FirestoreActionResult.Success).data
+
+        assertEquals(2, released.updatedRoute.activeQueueCount)
+        assertEquals(2, released.updatedRoute.queueSequence)
+        assertEquals(3, third.createdOrUpdatedLock.queuePosition)
+        assertEquals(3, third.updatedRoute.activeQueueCount)
+        assertEquals(3, third.updatedRoute.queueSequence)
     }
 
     @Test
