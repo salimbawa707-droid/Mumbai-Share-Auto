@@ -331,28 +331,57 @@ class FirestoreUserProfileRepository(
         val path = "${AuthenticatedUserProfile.COLLECTION_USERS}/${cleanProfile.uid}"
 
         try {
+            val signedInUid = auth?.currentUser?.uid
+            if (signedInUid.isNullOrBlank() || signedInUid != cleanProfile.uid) {
+                return@withContext FirestoreProfileResult.Failure(
+                    "Sign in with the same verified Phone OTP account before saving this profile."
+                )
+            }
+
             val docRef = db.collection(AuthenticatedUserProfile.COLLECTION_USERS).document(cleanProfile.uid)
             val existingSnapshot = docRef.get().await()
+            val applicationRef = db.collection(DRIVER_APPLICATIONS_COLLECTION).document(cleanProfile.uid)
 
             if (!existingSnapshot.exists()) {
-                val payload = cleanProfile.toBaseFirestoreFields().toMutableMap().apply {
+                // Every new account is created as a passenger. A client cannot grant itself
+                // driver privileges merely by selecting Driver during onboarding.
+                val passengerProfile = cleanProfile.copy(
+                    role = AuthUserRole.PASSENGER,
+                    driverAutoRegNumber = null
+                )
+                val payload = passengerProfile.toBaseFirestoreFields().toMutableMap().apply {
                     put(AuthenticatedUserProfile.FIELD_CREATED_AT, FieldValue.serverTimestamp())
                     put(AuthenticatedUserProfile.FIELD_UPDATED_AT, FieldValue.serverTimestamp())
                 }
                 docRef.set(payload).await()
             } else {
-                val updatePayload = mutableMapOf<String, Any>(
-                    AuthenticatedUserProfile.FIELD_ROLE to cleanProfile.role.name,
-                    AuthenticatedUserProfile.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
-                )
-                if (cleanProfile.role == AuthUserRole.DRIVER && !cleanProfile.driverAutoRegNumber.isNullOrBlank()) {
-                    updatePayload[AuthenticatedUserProfile.FIELD_DRIVER_AUTO_REG_NUMBER] =
-                        cleanProfile.driverAutoRegNumber
-                } else {
-                    updatePayload[AuthenticatedUserProfile.FIELD_DRIVER_AUTO_REG_NUMBER] =
-                        FieldValue.delete()
+                // Existing role is authoritative. The client may refresh only its timestamp.
+                docRef.update(
+                    mapOf(AuthenticatedUserProfile.FIELD_UPDATED_AT to FieldValue.serverTimestamp())
+                ).await()
+            }
+
+            if (cleanProfile.role == AuthUserRole.DRIVER) {
+                val applicationSnapshot = applicationRef.get().await()
+                if (!applicationSnapshot.exists()) {
+                    val applicationPayload = mapOf(
+                        "uid" to cleanProfile.uid,
+                        "phoneNumber" to cleanProfile.phoneNumber,
+                        "autoRegNumber" to cleanProfile.driverAutoRegNumber.orEmpty(),
+                        "status" to "PENDING",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    applicationRef.set(applicationPayload).await()
+                } else if (applicationSnapshot.getString("status") == "REJECTED") {
+                    applicationRef.update(
+                        mapOf(
+                            "autoRegNumber" to cleanProfile.driverAutoRegNumber.orEmpty(),
+                            "status" to "PENDING",
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
                 }
-                docRef.update(updatePayload).await()
             }
 
             val savedSnap = docRef.get().await()
@@ -366,8 +395,10 @@ class FirestoreUserProfileRepository(
                 )
             } else {
                 null
-            }
-            FirestoreProfileResult.Success(restored ?: cleanProfile)
+            } ?: return@withContext FirestoreProfileResult.Failure(
+                "The saved account profile could not be validated. Please contact support."
+            )
+            FirestoreProfileResult.Success(restored)
         } catch (c: CancellationException) {
             throw c
         } catch (e: Exception) {
@@ -417,6 +448,10 @@ class FirestoreUserProfileRepository(
                 path = path
             )
         }
+    }
+
+    companion object {
+        const val DRIVER_APPLICATIONS_COLLECTION = "driver_applications"
     }
 
     private fun <T> handleFirestoreException(
