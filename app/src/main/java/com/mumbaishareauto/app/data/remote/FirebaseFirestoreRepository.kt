@@ -91,11 +91,7 @@ data class LiveAutoRoute(
             FIELD_IS_ACTIVE to isActive,
             FIELD_IS_LEGALLY_VERIFIED to false
         )
-        val normalizedPlate = driverAutoRegNumber?.let { AuthDomainValidator.normalizeAutoRegNumber(it) }
-            ?.takeIf { AuthDomainValidator.INDIAN_AUTO_REG_REGEX.matches(it) }
-        if (normalizedPlate != null) {
-            fields[FIELD_DRIVER_AUTO_REG_NUMBER] = normalizedPlate
-        }
+        // Vehicle registration is private profile data; never publish it in the public live-route feed.
         return fields
     }
 
@@ -154,12 +150,12 @@ data class LiveAutoRoute(
             // Missing active state is unknown; never silently advertise an unverified route as active.
             val isActive = data[FIELD_IS_ACTIVE] as? Boolean ?: return null
             val isLegallyVerified = (data[FIELD_IS_LEGALLY_VERIFIED] as? Boolean) ?: false
-            val plate = (data[FIELD_DRIVER_AUTO_REG_NUMBER] as? String)?.trim()?.ifEmpty { null }
-
+            // Older route documents may contain a public registration plate. Do not surface it
+            // through the route model; new route writes never include this field.
             return LiveAutoRoute(
                 postingId = postingId,
                 driverUid = driverUid,
-                driverAutoRegNumber = plate,
+                driverAutoRegNumber = null,
                 pickupStation = pickupStation,
                 pickupSide = pickupSide,
                 designatedStand = designatedStand,
