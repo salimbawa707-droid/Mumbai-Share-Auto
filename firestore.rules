@@ -296,6 +296,19 @@ service cloud.firestore {
           get(/databases/$(database)/documents/driver_applications/$(userId)).data.autoRegNumber == incoming().driverAutoRegNumber &&
           incoming().updatedAt == request.time &&
           incoming().diff(existing()).affectedKeys().hasOnly(['role', 'driverAutoRegNumber', 'updatedAt'])
+        ) ||
+        (
+          isAdmin() &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().createdAt == existing().createdAt &&
+          existing().role == 'DRIVER' &&
+          incoming().role == 'PASSENGER' &&
+          !('driverAutoRegNumber' in incoming()) &&
+          exists(/databases/$(database)/documents/driver_applications/$(userId)) &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.status == 'REJECTED' &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'driverAutoRegNumber', 'updatedAt'])
         )
       );
 
