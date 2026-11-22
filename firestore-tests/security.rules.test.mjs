@@ -72,7 +72,11 @@ async function seedPassengerAndDriver() {
   });
 }
 
-async function seedRouteAndAgreement() {
+async function seedRouteAndAgreement({
+  availableSeats = 3,
+  activeQueueCount = 0,
+  queueSequence = 0
+} = {}) {
   await seedPassengerAndDriver();
   await seed(`active_routes/${routeId}`, {
     postingId: routeId,
@@ -84,9 +88,9 @@ async function seedRouteAndAgreement() {
     viaPoints: ["MIDC"],
     totalBookingFare: 150,
     totalCapacitySeats: 3,
-    availableSeats: 3,
-    activeQueueCount: 0,
-    queueSequence: 0,
+    availableSeats,
+    activeQueueCount,
+    queueSequence,
     isActive: true,
     isLegallyVerified: false,
     createdAt: new Date(),
@@ -248,7 +252,7 @@ test("seat lock rejects a client-substituted fare", async () => {
 });
 
 test("seat release decrements active queue count without rewinding queue sequence", async () => {
-  await seedRouteAndAgreement();
+  await seedRouteAndAgreement({ availableSeats: 1, activeQueueCount: 1, queueSequence: 1 });
   await seed(`active_routes/${routeId}/seat_locks/${passengerUid}`, {
     ...seatLockPayload(100),
     lockedAt: new Date(),
