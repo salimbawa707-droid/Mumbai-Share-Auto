@@ -913,7 +913,8 @@ class FirebaseFirestoreRepository(
                 if (!routeSnap.exists() || route?.get(LiveAutoRoute.FIELD_DRIVER_UID) != signedInUid) {
                     throw SeatLockConflictException("Only the driver who owns this route can share its vehicle number.", false)
                 }
-                if (!lockSnap.exists() || lock?.get(RouteSeatLock.FIELD_STATUS) != RouteSeatLock.STATUS_LOCKED ||
+                if (!lockSnap.exists() || lock == null ||
+                    lock[RouteSeatLock.FIELD_STATUS] != RouteSeatLock.STATUS_LOCKED ||
                     lock[RouteSeatLock.FIELD_DRIVER_UID] != signedInUid ||
                     lock[RouteSeatLock.FIELD_PASSENGER_UID] != cleanPassengerUid
                 ) {
