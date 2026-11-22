@@ -10,10 +10,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: mumbai-share-auto-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
-
 jobs:
   android-build:
     name: Android tests and APK build
