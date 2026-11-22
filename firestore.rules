@@ -388,31 +388,49 @@ service cloud.firestore {
 
         allow update: if isValidId(postingId) &&
           isValidId(passengerUid) &&
-          isOwner(passengerUid) &&
-          hasUserRole('PASSENGER') &&
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
-          incoming().updatedAt == request.time &&
           (
-            // Release locked seat back to route inventory
             (
-              existing().status == 'LOCKED' &&
-              incoming().status == 'RELEASED' &&
-              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
-            ) ||
-            // Re-lock after previous release inside atomic transaction
-            (
-              existing().status == 'RELEASED' &&
-              get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
-              get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
-              isValidId(incoming().negotiationId) &&
-              exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
-              isValidSeatLockPayload(
-                incoming(),
-                postingId,
-                passengerUid,
-                get(/databases/$(database)/documents/active_routes/$(postingId)),
-                get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
+              // Passenger releases or re-locks their own seat.
+              isOwner(passengerUid) &&
+              hasUserRole('PASSENGER') &&
+              incoming().updatedAt == request.time &&
+              (
+                (
+                  existing().status == 'LOCKED' &&
+                  incoming().status == 'RELEASED' &&
+                  !('driverAutoRegNumber' in incoming()) &&
+                  incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'driverAutoRegNumber'])
+                ) ||
+                (
+                  existing().status == 'RELEASED' &&
+                  get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
+                  get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
+                  isValidId(incoming().negotiationId) &&
+                  exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
+                  isValidSeatLockPayload(
+                    incoming(),
+                    postingId,
+                    passengerUid,
+                    get(/databases/$(database)/documents/active_routes/$(postingId)),
+                    get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
+                  )
+                )
               )
+            ) ||
+            (
+              // Only the approved route driver can reveal the plate to a passenger with a live lock.
+              request.auth.uid == existing().driverUid &&
+              request.auth.uid == get(/databases/$(database)/documents/active_routes/$(postingId)).data.driverUid &&
+              hasUserRole('DRIVER') &&
+              existing().status == 'LOCKED' &&
+              !('driverAutoRegNumber' in existing()) &&
+              'driverAutoRegNumber' in incoming() &&
+              isValidAutoRegNumber(incoming().driverAutoRegNumber) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.driverAutoRegNumber == incoming().driverAutoRegNumber &&
+              incoming().status == existing().status &&
+              incoming().updatedAt == request.time &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['driverAutoRegNumber', 'updatedAt'])
             )
           );
 
