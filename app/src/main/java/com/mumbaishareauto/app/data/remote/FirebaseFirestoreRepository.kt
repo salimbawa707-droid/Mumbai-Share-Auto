@@ -45,6 +45,7 @@ data class LiveAutoRoute(
     val totalCapacitySeats: Int,
     val availableSeats: Int,
     val activeQueueCount: Int = 0,
+    val queueSequence: Int = 0,
     val isActive: Boolean = true,
     val isLegallyVerified: Boolean = false,
     val createdAtMs: Long? = null,
@@ -86,6 +87,7 @@ data class LiveAutoRoute(
             FIELD_TOTAL_CAPACITY_SEATS to totalCapacitySeats,
             FIELD_AVAILABLE_SEATS to availableSeats,
             FIELD_ACTIVE_QUEUE_COUNT to activeQueueCount,
+            FIELD_QUEUE_SEQUENCE to queueSequence,
             FIELD_IS_ACTIVE to isActive,
             FIELD_IS_LEGALLY_VERIFIED to false
         )
@@ -113,6 +115,7 @@ data class LiveAutoRoute(
         const val FIELD_TOTAL_CAPACITY_SEATS = "totalCapacitySeats"
         const val FIELD_AVAILABLE_SEATS = "availableSeats"
         const val FIELD_ACTIVE_QUEUE_COUNT = "activeQueueCount"
+        const val FIELD_QUEUE_SEQUENCE = "queueSequence"
         const val FIELD_IS_ACTIVE = "isActive"
         const val FIELD_IS_LEGALLY_VERIFIED = "isLegallyVerified"
         const val FIELD_CREATED_AT = "createdAt"
@@ -147,6 +150,7 @@ data class LiveAutoRoute(
             // Reject corrupt inventory instead of coercing it into a plausible-looking seat count.
             if (totalCapacity !in MIN_SEATS..MAX_SEATS || available !in 0..totalCapacity) return null
             val queueCount = ((data[FIELD_ACTIVE_QUEUE_COUNT] as? Number)?.toInt() ?: 0).takeIf { it >= 0 } ?: return null
+            val queueSequence = ((data[FIELD_QUEUE_SEQUENCE] as? Number)?.toInt() ?: queueCount).takeIf { it >= queueCount } ?: return null
             // Missing active state is unknown; never silently advertise an unverified route as active.
             val isActive = data[FIELD_IS_ACTIVE] as? Boolean ?: return null
             val isLegallyVerified = (data[FIELD_IS_LEGALLY_VERIFIED] as? Boolean) ?: false
@@ -165,6 +169,7 @@ data class LiveAutoRoute(
                 totalCapacitySeats = totalCapacity,
                 availableSeats = available,
                 activeQueueCount = queueCount,
+                queueSequence = queueSequence,
                 isActive = isActive,
                 isLegallyVerified = isLegallyVerified,
                 createdAtMs = createdAtMs,
@@ -374,6 +379,7 @@ object LiveRouteTransactionEngine {
             totalCapacitySeats = validated.availableSeats,
             availableSeats = validated.availableSeats,
             activeQueueCount = 0,
+            queueSequence = 0,
             isActive = true,
             isLegallyVerified = false,
             createdAtMs = nowMs,
@@ -439,10 +445,12 @@ object LiveRouteTransactionEngine {
 
         val nextAvailableSeats = currentRoute.availableSeats - seatsRequested
         val nextQueueCount = currentRoute.activeQueueCount + 1
+        val nextQueueSequence = currentRoute.queueSequence + 1
 
         val updatedRoute = currentRoute.copy(
             availableSeats = nextAvailableSeats,
             activeQueueCount = nextQueueCount,
+            queueSequence = nextQueueSequence,
             updatedAtMs = nowMs
         )
         val lock = RouteSeatLock(
@@ -453,7 +461,7 @@ object LiveRouteTransactionEngine {
             negotiationId = negotiationId?.trim()?.takeIf { it.isNotEmpty() },
             seatsLocked = seatsRequested,
             agreedTotalFare = agreedTotalFare ?: currentRoute.totalBookingFare,
-            queuePosition = nextQueueCount,
+            queuePosition = nextQueueSequence,
             status = RouteSeatLock.STATUS_LOCKED,
             lockedAtMs = nowMs,
             updatedAtMs = nowMs
@@ -827,6 +835,7 @@ class FirebaseFirestoreRepository(
                         val routeUpdates = mapOf<String, Any>(
                             LiveAutoRoute.FIELD_AVAILABLE_SEATS to output.updatedRoute.availableSeats,
                             LiveAutoRoute.FIELD_ACTIVE_QUEUE_COUNT to output.updatedRoute.activeQueueCount,
+                            LiveAutoRoute.FIELD_QUEUE_SEQUENCE to output.updatedRoute.queueSequence,
                             LiveAutoRoute.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                         )
                         val lockPayload = output.createdOrUpdatedLock.toBaseFirestoreFields().toMutableMap().apply {
