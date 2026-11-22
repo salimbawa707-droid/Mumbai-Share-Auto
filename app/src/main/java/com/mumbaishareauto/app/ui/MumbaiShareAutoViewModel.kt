@@ -558,7 +558,11 @@ class MumbaiShareAutoViewModel(
                         isLoading = false,
                         resendCooldownSeconds = 0,
                         errorMessage = null,
-                        statusMessage = "Phone verified & profile saved to Cloud Firestore."
+                        statusMessage = if (currentState.selectedRole == AuthUserRole.DRIVER && saved.role != AuthUserRole.DRIVER) {
+                            "Passenger account saved. Your driver application is pending trusted review; driver publishing stays locked until approval."
+                        } else {
+                            "Phone verified & profile saved to Cloud Firestore."
+                        }
                     )
                 }
                 onSuccess()
