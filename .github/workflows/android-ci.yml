@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# Keep one verification run per branch/PR head; rapid multi-file commits must not
+# leave stale builds queued ahead of the final APK.
+concurrency:
+  group: mumbai-share-auto-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   android-verify:
     runs-on: ubuntu-latest
