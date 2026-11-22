@@ -102,6 +102,7 @@ service cloud.firestore {
           'totalCapacitySeats',
           'availableSeats',
           'activeQueueCount',
+          'queueSequence',
           'isActive',
           'isLegallyVerified',
           'createdAt',
@@ -120,6 +121,7 @@ service cloud.firestore {
           'totalCapacitySeats',
           'availableSeats',
           'activeQueueCount',
+          'queueSequence',
           'isActive',
           'isLegallyVerified',
           'createdAt',
@@ -149,6 +151,7 @@ service cloud.firestore {
         data.availableSeats is int &&
         data.availableSeats == data.totalCapacitySeats &&
         data.activeQueueCount == 0 &&
+        data.queueSequence == 0 &&
         data.isActive == true &&
         data.isLegallyVerified == false &&
         data.createdAt == request.time &&
@@ -326,7 +329,7 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt'])
         ) || (
           request.auth.uid != existing().driverUid &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'updatedAt']) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'queueSequence', 'updatedAt']) &&
           incoming().updatedAt == request.time &&
           incoming().availableSeats is int &&
           incoming().availableSeats >= 0 &&
@@ -341,6 +344,7 @@ service cloud.firestore {
               (existing().availableSeats - incoming().availableSeats) >= 1 &&
               (existing().availableSeats - incoming().availableSeats) <= 3 &&
               incoming().activeQueueCount == existing().activeQueueCount + 1 &&
+              incoming().queueSequence == ((('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) + 1) &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked == (existing().availableSeats - incoming().availableSeats)
             ) ||
@@ -348,6 +352,7 @@ service cloud.firestore {
             (
               incoming().availableSeats > existing().availableSeats &&
               incoming().activeQueueCount == existing().activeQueueCount - 1 &&
+              incoming().queueSequence == (('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) &&
               get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'RELEASED' &&
               (incoming().availableSeats - existing().availableSeats) == get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked
