@@ -88,6 +88,15 @@ class FareNegotiationFirestoreRepository(
         }
         val driverUid = route.getString("driverUid")
             ?: return Result.failure(IllegalStateException("Driver route was not found."))
+        val designatedStand = route.getString("designatedStand").orEmpty()
+        val routeDestination = route.getString("destination").orEmpty()
+        val viaPoints = route.get("viaPoints") as? List<*> ?: emptyList<Any>()
+        if (pickupStand.trim() != designatedStand) {
+            return Result.failure(IllegalArgumentException("Pickup must be the driver's published designated stand."))
+        }
+        if (destination.trim() != routeDestination && destination.trim() !in viaPoints.filterIsInstance<String>()) {
+            return Result.failure(IllegalArgumentException("Destination must match the driver's published destination or a via point."))
+        }
         val bookingId = "FARE_${UUID.randomUUID().toString().replace("-", "").take(20).uppercase()}"
         val (session, validation) = FareNegotiationSession.createPassengerOffer(
             bookingId = bookingId,
