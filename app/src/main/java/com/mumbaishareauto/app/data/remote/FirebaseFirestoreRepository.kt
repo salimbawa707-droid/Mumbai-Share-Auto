@@ -183,6 +183,7 @@ data class RouteSeatLock(
     val postingId: String,
     val passengerUid: String,
     val driverUid: String,
+    val negotiationId: String? = null,
     val seatsLocked: Int,
     val agreedTotalFare: Double,
     val queuePosition: Int,
@@ -190,7 +191,7 @@ data class RouteSeatLock(
     val lockedAtMs: Long? = null,
     val updatedAtMs: Long? = null
 ) {
-    fun toBaseFirestoreFields(): Map<String, Any> = linkedMapOf(
+    fun toBaseFirestoreFields(): Map<String, Any> = linkedMapOf<String, Any>(
         FIELD_LOCK_ID to lockId,
         FIELD_POSTING_ID to postingId,
         FIELD_PASSENGER_UID to passengerUid,
@@ -199,7 +200,9 @@ data class RouteSeatLock(
         FIELD_AGREED_TOTAL_FARE to agreedTotalFare,
         FIELD_QUEUE_POSITION to queuePosition,
         FIELD_STATUS to status
-    )
+    ).apply {
+        negotiationId?.takeIf { it.isNotBlank() }?.let { put(FIELD_NEGOTIATION_ID, it) }
+    }
 
     companion object {
         const val STATUS_LOCKED = "LOCKED"
@@ -209,6 +212,7 @@ data class RouteSeatLock(
         const val FIELD_POSTING_ID = "postingId"
         const val FIELD_PASSENGER_UID = "passengerUid"
         const val FIELD_DRIVER_UID = "driverUid"
+        const val FIELD_NEGOTIATION_ID = "negotiationId"
         const val FIELD_SEATS_LOCKED = "seatsLocked"
         const val FIELD_AGREED_TOTAL_FARE = "agreedTotalFare"
         const val FIELD_QUEUE_POSITION = "queuePosition"
@@ -238,6 +242,7 @@ data class RouteSeatLock(
                 postingId = postingId,
                 passengerUid = passengerUid,
                 driverUid = driverUid,
+                negotiationId = (data[FIELD_NEGOTIATION_ID] as? String)?.trim()?.takeIf { it.isNotEmpty() },
                 seatsLocked = seatsLocked,
                 agreedTotalFare = agreedFare,
                 queuePosition = queuePosition,
@@ -391,6 +396,8 @@ object LiveRouteTransactionEngine {
         existingLock: RouteSeatLock?,
         passengerUid: String,
         seatsRequested: Int,
+        agreedTotalFare: Double? = null,
+        negotiationId: String? = null,
         nowMs: Long = System.currentTimeMillis()
     ): FirestoreActionResult<SeatLockTransitionOutput> {
         val cleanPassengerUid = passengerUid.trim()
@@ -443,8 +450,9 @@ object LiveRouteTransactionEngine {
             postingId = currentRoute.postingId,
             passengerUid = cleanPassengerUid,
             driverUid = currentRoute.driverUid,
+            negotiationId = negotiationId?.trim()?.takeIf { it.isNotEmpty() },
             seatsLocked = seatsRequested,
-            agreedTotalFare = currentRoute.totalBookingFare,
+            agreedTotalFare = agreedTotalFare ?: currentRoute.totalBookingFare,
             queuePosition = nextQueueCount,
             status = RouteSeatLock.STATUS_LOCKED,
             lockedAtMs = nowMs,
@@ -470,6 +478,7 @@ object LiveRouteTransactionEngine {
             .coerceAtMost(currentRoute.totalCapacitySeats)
         val updatedRoute = currentRoute.copy(
             availableSeats = restoredSeats,
+            activeQueueCount = (currentRoute.activeQueueCount - 1).coerceAtLeast(0),
             updatedAtMs = nowMs
         )
         val releasedLock = existingLock.copy(
@@ -490,7 +499,8 @@ interface LiveRoutesDataSource {
         postingId: String,
         passengerUid: String,
         seatsRequested: Int,
-        agreedTotalFare: Double? = null
+        agreedTotalFare: Double? = null,
+        negotiationId: String? = null
     ): FirestoreActionResult<RouteSeatLock>
     suspend fun releaseSeatTransaction(
         postingId: String,
@@ -726,12 +736,22 @@ class FirebaseFirestoreRepository(
         postingId: String,
         passengerUid: String,
         seatsRequested: Int,
-        agreedTotalFare: Double?
+        agreedTotalFare: Double?,
+        negotiationId: String?
     ): FirestoreActionResult<RouteSeatLock> = withContext(ioDispatcher) {
         val cleanPostingId = postingId.trim()
         val cleanPassengerUid = passengerUid.trim()
         if (cleanPostingId.isEmpty() || cleanPassengerUid.isEmpty()) {
             return@withContext FirestoreActionResult.Failure("Route ID and Passenger UID are required.")
+        }
+        val cleanNegotiationId = negotiationId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return@withContext FirestoreActionResult.Failure(
+                "A confirmed fare negotiation is required before reserving seats."
+            )
+        if (agreedTotalFare == null || !agreedTotalFare.isFinite() || agreedTotalFare <= 0.0) {
+            return@withContext FirestoreActionResult.Failure(
+                "A positive, confirmed whole-group fare is required before reserving seats."
+            )
         }
         val db = firestore ?: return@withContext FirestoreActionResult.Failure(
             message = FirebaseRuntimeInspector.UNCONFIGURED_MESSAGE
@@ -745,6 +765,7 @@ class FirebaseFirestoreRepository(
 
         val routeRef = db.collection(LiveAutoRoute.COLLECTION_ACTIVE_ROUTES).document(cleanPostingId)
         val lockRef = routeRef.collection(LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS).document(cleanPassengerUid)
+        val negotiationRef = db.collection(FareNegotiationFirestoreRepository.COLLECTION).document(cleanNegotiationId)
         val path = "${LiveAutoRoute.COLLECTION_ACTIVE_ROUTES}/$cleanPostingId/${LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS}/$cleanPassengerUid"
 
         try {
@@ -758,6 +779,26 @@ class FirebaseFirestoreRepository(
                 ) ?: throw SeatLockConflictException("Route document data is invalid.", false)
 
                 val existingLockSnap = tx.get(lockRef)
+                val negotiationSnap = tx.get(negotiationRef)
+                val negotiation = negotiationSnap.data
+                    ?: throw SeatLockConflictException("Confirmed fare negotiation was not found.", false)
+                val negotiatedFare = (negotiation["agreedTotalFareInr"] as? Number)?.toDouble()
+                val negotiationValid =
+                    negotiationSnap.exists() &&
+                    negotiation["bookingId"] == cleanNegotiationId &&
+                    negotiation["status"] == "AGREED" &&
+                    negotiation["passengerUid"] == cleanPassengerUid &&
+                    negotiation["driverUid"] == currentRoute.driverUid &&
+                    negotiation["routeId"] == cleanPostingId &&
+                    (negotiation["passengerCount"] as? Number)?.toInt() == seatsRequested &&
+                    negotiatedFare != null && negotiatedFare.isFinite() &&
+                    kotlin.math.abs(negotiatedFare - agreedTotalFare) < 0.000001
+                if (!negotiationValid) {
+                    throw SeatLockConflictException(
+                        "This fare agreement is not valid for your account, route, passenger count or agreed total.",
+                        false
+                    )
+                }
                 val existingLock = if (existingLockSnap.exists()) {
                     existingLockSnap.data?.let { lockData ->
                         RouteSeatLock.fromFirestoreFields(existingLockSnap.id, lockData)
@@ -766,15 +807,14 @@ class FirebaseFirestoreRepository(
                     null
                 }
 
-                if (agreedTotalFare != null && (!agreedTotalFare.isFinite() || agreedTotalFare <= 0.0)) {
-                    throw SeatLockConflictException("Agreed total fare must be a positive finite amount.", false)
-                }
-                val routeForFare = if (agreedTotalFare == null) currentRoute else currentRoute.copy(totalBookingFare = agreedTotalFare)
+                val routeForFare = currentRoute.copy(totalBookingFare = agreedTotalFare)
                 when (val transition = LiveRouteTransactionEngine.computeSeatLockTransition(
                     currentRoute = routeForFare,
                     existingLock = existingLock,
                     passengerUid = cleanPassengerUid,
-                    seatsRequested = seatsRequested
+                    seatsRequested = seatsRequested,
+                    agreedTotalFare = agreedTotalFare,
+                    negotiationId = cleanNegotiationId
                 )) {
                     is FirestoreActionResult.Failure -> {
                         throw SeatLockConflictException(
@@ -869,6 +909,7 @@ class FirebaseFirestoreRepository(
                             routeRef,
                             mapOf(
                                 LiveAutoRoute.FIELD_AVAILABLE_SEATS to output.updatedRoute.availableSeats,
+                                LiveAutoRoute.FIELD_ACTIVE_QUEUE_COUNT to output.updatedRoute.activeQueueCount,
                                 LiveAutoRoute.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                             )
                         )
