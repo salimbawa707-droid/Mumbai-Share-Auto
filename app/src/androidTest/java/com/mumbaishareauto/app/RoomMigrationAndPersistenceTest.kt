@@ -35,7 +35,7 @@ import org.junit.runner.RunWith
 class RoomMigrationAndPersistenceTest {
 
     @Test
-    fun migration1To2_preservesLegacyV1RowsAndCreatesNewTables() = runBlocking {
+    fun migration1To2_preservesLegacyV1RowsAndCreatesNewTables(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "migration_1_2_test.db"
         context.deleteDatabase(dbName)
@@ -115,7 +115,7 @@ class RoomMigrationAndPersistenceTest {
     }
 
     @Test
-    fun databaseReopenAfterClose_persistsCrudAndLegacySharedPreferencesMigration() = runBlocking {
+    fun databaseReopenAfterClose_persistsCrudAndLegacySharedPreferencesMigration(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "restart_persistence_test.db"
         val prefsName = "restart_fav_prefs_test"
