@@ -10,10 +10,15 @@ import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
  * Register its emitted debug token in Firebase Console before enabling App Check enforcement.
  */
 object FirebaseAppCheckInstaller {
+    @Volatile
+    private var installed = false
+
+    @Synchronized
     fun install(context: Context) {
-        if (FirebaseApp.getApps(context.applicationContext).isEmpty()) return
+        if (installed || FirebaseApp.getApps(context.applicationContext).isEmpty()) return
         FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
             DebugAppCheckProviderFactory.getInstance()
         )
+        installed = true
     }
 }
