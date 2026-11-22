@@ -75,8 +75,9 @@ jobs:
 
   android-instrumentation:
     name: Android instrumentation tests on emulator
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Ubuntu 22.04 is pinned for a stable Android Emulator / PackageManager host environment.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     env:
       # GitHub-hosted runners lack KVM; use QEMU TCG with conservative graphics.
       ANDROID_I_WANT_MY_TCG: "yes"
@@ -104,7 +105,8 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 1200
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 3072
+          cores: 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -partition-size 4096
           script: |
             set +e
             ./gradlew connectedDebugAndroidTest --no-daemon
