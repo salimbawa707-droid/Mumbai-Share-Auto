@@ -360,7 +360,8 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
         postingId: String,
         passengerUid: String,
         seatsRequested: Int,
-        agreedTotalFare: Double?
+        agreedTotalFare: Double?,
+        negotiationId: String?
     ): FirestoreActionResult<RouteSeatLock> {
         val current = routesMap[postingId]
             ?: return FirestoreActionResult.Failure("Route not found.", isDoubleBookingConflict = true)
@@ -369,7 +370,9 @@ private class InMemoryTransactionalFirestoreRoutesRepo(
             currentRoute = if (agreedTotalFare == null) current else current.copy(totalBookingFare = agreedTotalFare),
             existingLock = existingLock,
             passengerUid = passengerUid,
-            seatsRequested = seatsRequested
+            seatsRequested = seatsRequested,
+            agreedTotalFare = agreedTotalFare,
+            negotiationId = negotiationId
         )) {
             is FirestoreActionResult.Failure -> transition
             is FirestoreActionResult.Success -> {
