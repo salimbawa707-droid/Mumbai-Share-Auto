@@ -14,7 +14,8 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
-  serverTimestamp
+  serverTimestamp,
+  deleteField
 } from "firebase/firestore";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -432,4 +433,62 @@ test("passenger can accept a driver counter while preserving negotiation history
     agreedTotalFareInr: 120,
     updatedAt: serverTimestamp()
   }));
+});
+
+
+test("approved route driver can reveal vehicle number only to a currently locked passenger", async () => {
+  await seedRouteAndAgreement({ availableSeats: 1, activeQueueCount: 1, queueSequence: 1 });
+  await seed(`active_routes/${routeId}/seat_locks/${passengerUid}`, {
+    ...seatLockPayload(100),
+    lockedAt: new Date(),
+    updatedAt: new Date()
+  });
+  const driver = user(driverUid, { phone_number: "+919876543211" });
+  await assertSucceeds(updateDoc(doc(driver, `active_routes/${routeId}/seat_locks/${passengerUid}`), {
+    driverAutoRegNumber: "MH02AB1234",
+    updatedAt: serverTimestamp()
+  }));
+  const passenger = user(passengerUid, { phone_number: phone });
+  const revealed = await getDoc(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`));
+  assert.equal(revealed.data().driverAutoRegNumber, "MH02AB1234");
+});
+
+test("passenger cannot forge the driver's vehicle number in their seat lock", async () => {
+  await seedRouteAndAgreement({ availableSeats: 1, activeQueueCount: 1, queueSequence: 1 });
+  await seed(`active_routes/${routeId}/seat_locks/${passengerUid}`, {
+    ...seatLockPayload(100),
+    lockedAt: new Date(),
+    updatedAt: new Date()
+  });
+  const passenger = user(passengerUid, { phone_number: phone });
+  await assertFails(updateDoc(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`), {
+    driverAutoRegNumber: "MH02AB1234",
+    updatedAt: serverTimestamp()
+  }));
+});
+
+test("released seat lock removes previously shared vehicle number", async () => {
+  await seedRouteAndAgreement({ availableSeats: 1, activeQueueCount: 1, queueSequence: 1 });
+  await seed(`active_routes/${routeId}/seat_locks/${passengerUid}`, {
+    ...seatLockPayload(100),
+    driverAutoRegNumber: "MH02AB1234",
+    lockedAt: new Date(),
+    updatedAt: new Date()
+  });
+  const passenger = user(passengerUid, { phone_number: phone });
+  const batch = writeBatch(passenger);
+  batch.update(doc(passenger, `active_routes/${routeId}`), {
+    availableSeats: 3,
+    activeQueueCount: 0,
+    queueSequence: 1,
+    updatedAt: serverTimestamp()
+  });
+  batch.update(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`), {
+    status: "RELEASED",
+    driverAutoRegNumber: deleteField(),
+    updatedAt: serverTimestamp()
+  });
+  await assertSucceeds(batch.commit());
+  const released = await getDoc(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`));
+  assert.equal(released.data().driverAutoRegNumber, undefined);
 });
