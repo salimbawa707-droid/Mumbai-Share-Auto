@@ -419,7 +419,8 @@ fun DriverModeScreen(
     driverLiveRoutes: List<LiveAutoRoute> = emptyList(),
     liveRouteActionState: LiveRouteActionState = LiveRouteActionState(),
     onDeactivateLiveRoute: (String) -> Unit = {},
-    onSelectRouteForQueue: (String?) -> Unit = {}
+    onSelectRouteForQueue: (String?) -> Unit = {},
+    onShareVehicleNumber: (postingId: String, passengerUid: String) -> Unit = { _, _ -> }
 ) {
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val selectedTab = DriverDashboardTab.entries[selectedTabIndex.coerceIn(0, DriverDashboardTab.entries.lastIndex)]
@@ -559,10 +560,29 @@ fun DriverModeScreen(
                                             )
                                         } else {
                                             liveRouteActionState.selectedQueueLocks.forEach { lock ->
-                                                Text(
-                                                    text = "• Queue #${lock.queuePosition}: ${lock.seatsLocked} seat(s) — ${lock.status}",
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(
+                                                        text = "• Queue #${lock.queuePosition}: ${lock.seatsLocked} seat(s) — ${lock.status}",
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                    if (lock.status == "LOCKED") {
+                                                        val sharedPlate = lock.driverAutoRegNumber
+                                                        if (sharedPlate.isNullOrBlank()) {
+                                                            OutlinedButton(
+                                                                onClick = { onShareVehicleNumber(liveRoute.postingId, lock.passengerUid) },
+                                                                modifier = Modifier.defaultMinSize(minHeight = 40.dp)
+                                                            ) {
+                                                                Text("Share vehicle number privately")
+                                                            }
+                                                        } else {
+                                                            Text(
+                                                                text = "Vehicle number shared: $sharedPlate",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
