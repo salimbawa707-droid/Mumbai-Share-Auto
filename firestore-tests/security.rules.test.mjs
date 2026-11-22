@@ -499,3 +499,31 @@ test("released seat lock removes previously shared vehicle number", async () => 
   const released = await getDoc(doc(passenger, `active_routes/${routeId}/seat_locks/${passengerUid}`));
   assert.equal(released.data().driverAutoRegNumber, undefined);
 });
+
+
+test("trusted admin can revoke a driver role after rejecting the application", async () => {
+  await seedPassengerAndDriver();
+  await seed(`admins/${adminUid}`, { enabled: true });
+  await seed(`driver_applications/${driverUid}`, {
+    uid: driverUid,
+    phoneNumber: "+919876543211",
+    autoRegNumber: "MH02AB1234",
+    status: "APPROVED",
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  const admin = user(adminUid);
+  await assertSucceeds(updateDoc(doc(admin, `driver_applications/${driverUid}`), {
+    status: "REJECTED",
+    updatedAt: serverTimestamp()
+  }));
+  await assertSucceeds(updateDoc(doc(admin, `users/${driverUid}`), {
+    role: "PASSENGER",
+    driverAutoRegNumber: deleteField(),
+    updatedAt: serverTimestamp()
+  }));
+  const driver = user(driverUid, { phone_number: "+919876543211" });
+  const profile = await getDoc(doc(driver, `users/${driverUid}`));
+  assert.equal(profile.data().role, "PASSENGER");
+  assert.equal(profile.data().driverAutoRegNumber, undefined);
+});
