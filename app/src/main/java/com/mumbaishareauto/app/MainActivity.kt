@@ -58,10 +58,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
-import com.google.firebase.FirebaseApp
-import com.google.firebase.appcheck.FirebaseAppCheck
-import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
-import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import com.mumbaishareauto.app.data.MumbaiStationDirectory
 import com.mumbaishareauto.app.data.local.AppPreferencesRepository
 import com.mumbaishareauto.app.data.local.FavoriteRouteRepository
@@ -119,19 +115,9 @@ class MainActivity : ComponentActivity() {
     private val apiService by lazy { HttpUrlConnectionMumbaiShareAutoApiService() }
     private var pendingDeepLinkBookingId by mutableStateOf<String?>(null)
 
-    private fun installFirebaseAppCheck() {
-        if (FirebaseApp.getApps(applicationContext).isEmpty()) return
-        val providerFactory = if (BuildConfig.DEBUG) {
-            DebugAppCheckProviderFactory.getInstance()
-        } else {
-            PlayIntegrityAppCheckProviderFactory.getInstance()
-        }
-        FirebaseAppCheck.getInstance().installAppCheckProviderFactory(providerFactory)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installFirebaseAppCheck()
+        FirebaseAppCheckInstaller.install(applicationContext)
         enableEdgeToEdge()
         MumbaiShareAutoNotificationManager.createNotificationChannels(applicationContext)
         connectivityManager = AndroidNetworkConnectivityManager(applicationContext)
