@@ -111,7 +111,6 @@ service cloud.firestore {
         data.keys().hasOnly([
           'postingId',
           'driverUid',
-          'driverAutoRegNumber',
           'pickupStation',
           'pickupSide',
           'designatedStand',
@@ -129,7 +128,6 @@ service cloud.firestore {
         ]) &&
         data.postingId == postingId &&
         data.driverUid == request.auth.uid &&
-        (!('driverAutoRegNumber' in data) || isValidAutoRegNumber(data.driverAutoRegNumber)) &&
         data.pickupStation is string &&
         data.pickupStation.size() >= 2 &&
         data.pickupStation.size() <= 80 &&
@@ -445,6 +443,8 @@ service cloud.firestore {
         data.routeId is string && data.routeId.size() > 0 &&
         exists(/databases/$(database)/documents/active_routes/$(data.routeId)) &&
         get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.driverUid == data.driverUid &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.isActive == true &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.availableSeats >= data.passengerCount &&
         data.pickupStand == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.designatedStand &&
         (data.destination == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.destination ||
           data.destination in get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.viaPoints) &&
