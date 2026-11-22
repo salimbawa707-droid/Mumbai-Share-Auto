@@ -45,7 +45,7 @@ data class LiveAutoRoute(
     val totalCapacitySeats: Int,
     val availableSeats: Int,
     val activeQueueCount: Int = 0,
-    val queueSequence: Int = 0,
+    val queueSequence: Int = activeQueueCount,
     val isActive: Boolean = true,
     val isLegallyVerified: Boolean = false,
     val createdAtMs: Long? = null,
