@@ -420,6 +420,12 @@ object LiveRouteTransactionEngine {
                 "Requested seats must be between ${LiveAutoRoute.MIN_SEATS} and ${LiveAutoRoute.MAX_SEATS}."
             )
         }
+        if (agreedTotalFare != null && (!agreedTotalFare.isFinite() || agreedTotalFare <= 0.0)) {
+            return FirestoreActionResult.Failure("Agreed total fare must be a positive finite amount.")
+        }
+        if (negotiationId != null && (negotiationId.isBlank() || agreedTotalFare == null)) {
+            return FirestoreActionResult.Failure("A valid negotiation ID and agreed total fare must be supplied together.")
+        }
         if (existingLock != null && existingLock.status == RouteSeatLock.STATUS_LOCKED) {
             return FirestoreActionResult.Failure(
                 message = "You already locked ${existingLock.seatsLocked} seat(s) on this auto (Queue #${existingLock.queuePosition}).",
@@ -478,11 +484,14 @@ object LiveRouteTransactionEngine {
         if (existingLock.status != RouteSeatLock.STATUS_LOCKED) {
             return FirestoreActionResult.Failure("This seat lock has already been released.")
         }
+        if (currentRoute.activeQueueCount <= 0) {
+            return FirestoreActionResult.Failure("Active queue count is inconsistent; seat release was blocked for safety.")
+        }
         val restoredSeats = (currentRoute.availableSeats + existingLock.seatsLocked)
             .coerceAtMost(currentRoute.totalCapacitySeats)
         val updatedRoute = currentRoute.copy(
             availableSeats = restoredSeats,
-            activeQueueCount = (currentRoute.activeQueueCount - 1).coerceAtLeast(0),
+            activeQueueCount = currentRoute.activeQueueCount - 1,
             updatedAtMs = nowMs
         )
         val releasedLock = existingLock.copy(
