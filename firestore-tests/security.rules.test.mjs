@@ -272,3 +272,96 @@ test("seat release decrements active queue count without rewinding queue sequenc
   });
   await assertSucceeds(batch.commit());
 });
+
+
+test("fare negotiation history must remain in exact append-only order", async () => {
+  await seedRouteAndAgreement();
+  await seed(`fare_negotiations/${negotiationId}`, {
+    bookingId: negotiationId,
+    routeId,
+    passengerUid,
+    driverUid,
+    passengerCount: 2,
+    pickupStand: "Andheri East Auto Deck Stand",
+    destination: "SEEPZ",
+    events: [
+      {
+        eventId: "event_1",
+        sequence: 1,
+        actor: "PASSENGER",
+        type: "PASSENGER_PROPOSED",
+        totalFareInr: 100,
+        createdAtEpochMs: 1000
+      },
+      {
+        eventId: "event_2",
+        sequence: 2,
+        actor: "DRIVER",
+        type: "DRIVER_COUNTERED",
+        totalFareInr: 120,
+        createdAtEpochMs: 2000
+      }
+    ],
+    status: "COUNTERED",
+    agreedTotalFareInr: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  const passenger = user(passengerUid, { phone_number: phone });
+  const reorderedHistory = [
+    {
+      eventId: "event_2",
+      sequence: 2,
+      actor: "DRIVER",
+      type: "DRIVER_COUNTERED",
+      totalFareInr: 120,
+      createdAtEpochMs: 2000
+    },
+    {
+      eventId: "event_1",
+      sequence: 1,
+      actor: "PASSENGER",
+      type: "PASSENGER_PROPOSED",
+      totalFareInr: 100,
+      createdAtEpochMs: 1000
+    },
+    {
+      eventId: "event_3",
+      sequence: 3,
+      actor: "PASSENGER",
+      type: "PASSENGER_ACCEPTED_COUNTER",
+      totalFareInr: 120,
+      createdAtEpochMs: 3000
+    }
+  ];
+  await assertFails(updateDoc(doc(passenger, `fare_negotiations/${negotiationId}`), {
+    events: reorderedHistory,
+    status: "AGREED",
+    agreedTotalFareInr: 120,
+    updatedAt: serverTimestamp()
+  }));
+});
+
+test("driver cannot publish vehicle registration in public route document", async () => {
+  await seedPassengerAndDriver();
+  const driver = user(driverUid, { phone_number: "+919876543211" });
+  await assertFails(setDoc(doc(driver, `active_routes/${routeId}`), {
+    postingId: routeId,
+    driverUid,
+    driverAutoRegNumber: "MH02AB1234",
+    pickupStation: "Andheri",
+    pickupSide: "EAST",
+    designatedStand: "Andheri East Auto Deck Stand",
+    destination: "SEEPZ",
+    viaPoints: [],
+    totalBookingFare: 150,
+    totalCapacitySeats: 3,
+    availableSeats: 3,
+    activeQueueCount: 0,
+    queueSequence: 0,
+    isActive: true,
+    isLegallyVerified: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  }));
+});
