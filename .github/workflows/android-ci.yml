@@ -99,16 +99,16 @@ jobs:
       - name: Grant executable permission to Gradle wrapper
         run: chmod +x ./gradlew
 
-      - name: Run Android instrumentation tests on API 35 emulator
+      - name: Run Android instrumentation tests on API 34 emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 1200
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048
           script: |
             set +e
             ./gradlew connectedDebugAndroidTest --no-daemon
