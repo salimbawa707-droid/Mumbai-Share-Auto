@@ -10,8 +10,6 @@ on:
 permissions:
   contents: read
 
-# Keep one verification run per branch/PR head; rapid multi-file commits must not
-# leave stale builds queued ahead of the final APK.
 concurrency:
   group: mumbai-share-auto-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -84,8 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # GitHub hosted Linux runners do not expose KVM on this runner pool.
-      # Force QEMU TCG instead of waiting forever for an unavailable accelerator.
+      # GitHub-hosted runners lack KVM; use QEMU TCG with conservative graphics.
       ANDROID_I_WANT_MY_TCG: "yes"
 
     steps:
@@ -111,4 +108,23 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 1200
-          script: ./gradlew connectedDebugAndroidTest --no-daemon
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            set +e
+            ./gradlew connectedDebugAndroidTest --no-daemon
+            TEST_STATUS=$?
+            adb logcat -d -v threadtime > instrumentation-logcat.txt
+            adb shell dumpsys activity processes > instrumentation-processes.txt
+            exit "$TEST_STATUS"
+
+      - name: Upload instrumentation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mumbai-share-auto-instrumentation-diagnostics
+          if-no-files-found: warn
+          path: |
+            instrumentation-logcat.txt
+            instrumentation-processes.txt
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/
