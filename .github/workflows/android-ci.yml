@@ -25,6 +25,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Set up Node.js for Firestore rules tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Firestore rules test dependencies
+        run: npm install --prefix firestore-tests --no-package-lock --no-audit --no-fund
+
+      - name: Run Firestore security rules emulator tests
+        run: npx --yes firebase-tools@13.29.2 emulators:exec --only firestore --project demo-mumbai-share-auto "npm test --prefix firestore-tests"
+
       - name: Grant executable permission to Gradle wrapper
         run: chmod +x ./gradlew
 
