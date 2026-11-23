@@ -49,6 +49,9 @@ jobs:
       - name: Run Android unit tests and lint
         run: ./gradlew clean testDebugUnitTest lintDebug --no-daemon
 
+      - name: Compile Android instrumentation test APK
+        run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
+
       - name: Prepare optional release signing key
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
         shell: bash
@@ -95,6 +98,9 @@ jobs:
 
       - name: Grant executable permission to Gradle wrapper
         run: chmod +x ./gradlew
+
+      - name: Fail fast if instrumentation tests fail to compile
+        run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
 
       - name: Run Android instrumentation tests on API 34 emulator
         uses: ReactiveCircus/android-emulator-runner@v2
