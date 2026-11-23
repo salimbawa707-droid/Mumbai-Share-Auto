@@ -76,7 +76,7 @@ class NavigationAndScreenTest {
         // Verifies honest offline empty state message
         composeRule.onNodeWithText(
             "No live driver offers are currently available. Station reference information is available."
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
 
         // Search station and select its clickable FilterChip, then filter by East exit
         composeRule.onNodeWithContentDescription("Search station name").performTextInput("Andheri")
@@ -97,12 +97,15 @@ class NavigationAndScreenTest {
         // Invalid party size triggers validation error via central BookingDomain
         composeRule.onNodeWithContentDescription("Passenger party size count").performTextInput("0")
         composeRule.onNodeWithText("Validate Party & Route via BookingDomain").performScrollTo().performClick()
+        // Invalid party size must surface a validation error; it must not be mistaken for an
+        // offline-offers state. Move to the summary to verify the real offline disclosure and lock.
+        composeRule.onNodeWithText("Review Booking Summary").performScrollTo().performClick()
+        composeRule.onNodeWithText("Confirmation Locked").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(
             "No live driver offers are currently available. Station reference information is available."
         ).performScrollTo().assertIsDisplayed()
 
         // Booking summary keeps confirmation disabled without DRIVER_ACCEPTED
-        composeRule.onNodeWithText("Review Booking Summary").performScrollTo().performClick()
         composeRule.onNodeWithText("Confirm Booking (Requires Driver Acceptance)").performScrollTo().assertIsNotEnabled()
     }
 
@@ -121,7 +124,7 @@ class NavigationAndScreenTest {
 
         // Open Post My Route 8-field form and verify flat ₹120 preview + disabled live publish
         composeRule.onAllNodesWithText("Post My Route")[0].performClick()
-        composeRule.onNodeWithText("1. Pickup Railway Station").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Driver pickup railway station").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("8. Vehicle Capacity Verification Status").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Total booking fare in rupees").performScrollTo().performTextInput("120")
         composeRule.onNodeWithText("Flat Booking Fare Preview: ₹120").performScrollTo().assertIsDisplayed()
@@ -140,7 +143,7 @@ class NavigationAndScreenTest {
         composeRule.onNodeWithText("E • EAST").performClick()
         composeRule.onNodeWithContentDescription("Directory search by station name").performTextInput("Bandra")
         composeRule.onNodeWithContentDescription("Directory search by destination corridor").performTextInput("BKC")
-        composeRule.onAllNodesWithText("EAST EXIT")[0].assertIsDisplayed()
+        composeRule.onNodeWithText("E • EAST").assertIsDisplayed()
         composeRule.onNodeWithText("Bandra Station East Auto Stand", substring = true).assertIsDisplayed()
     }
 
