@@ -82,7 +82,7 @@ class NavigationAndScreenTest {
 
         // Search station and select its clickable FilterChip, then filter by East exit
         composeRule.onNodeWithContentDescription("Search station name").performTextInput("Andheri")
-        composeRule.onNode(hasText("Andheri") and hasClickAction()).performClick()
+        composeRule.onAllNodesWithText("Andheri", substring = true).filter(hasClickAction())[1].performClick()
         composeRule.onNodeWithText("East Exit").performClick()
         composeRule.onNodeWithText("Andheri East Auto Deck Stand", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("SEEPZ Gate 1 & 2 / MIDC / Mahakali Caves", substring = true).performScrollTo().assertIsDisplayed()
@@ -121,7 +121,7 @@ class NavigationAndScreenTest {
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("Post My Route").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Post My Route").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("Post My Route")[0].assertIsDisplayed()
         composeRule.onNodeWithText("My Active Route").assertIsDisplayed()
         composeRule.onNodeWithText("Booking Requests").assertIsDisplayed()
 
@@ -132,7 +132,7 @@ class NavigationAndScreenTest {
         // Return Home, reopen the dashboard, and launch the route-posting form.
         composeRule.onNodeWithText("Home").performClick()
         composeRule.onNodeWithText("Driver Dashboard").performScrollTo().performClick()
-        composeRule.onNodeWithText("Post My Route").performScrollTo().performClick()
+        composeRule.onAllNodesWithText("Post My Route")[0].performClick()
         composeRule.onNodeWithText("Post My Route & Total Fare").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Driver pickup railway station").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("8. Vehicle Capacity Verification Status").performScrollTo().assertIsDisplayed()
@@ -154,7 +154,7 @@ class NavigationAndScreenTest {
         composeRule.onNodeWithContentDescription("Directory search by station name").performTextInput("Bandra")
         composeRule.onNodeWithContentDescription("Directory search by destination corridor").performTextInput("BKC")
         composeRule.onNodeWithText("E • EAST").assertIsDisplayed()
-        composeRule.onNodeWithText("Stand (East): Bandra Station East Auto Stand", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Stand (East Exit): Bandra Station East Auto Stand", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test
