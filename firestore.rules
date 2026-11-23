@@ -31,6 +31,14 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Admin identities are provisioned only by trusted project administrators through
+    // Firebase Console / Admin SDK. Client SDKs cannot read or write this collection.
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+    }
+
     function hasUserRole(role) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
@@ -94,6 +102,7 @@ service cloud.firestore {
           'totalCapacitySeats',
           'availableSeats',
           'activeQueueCount',
+          'queueSequence',
           'isActive',
           'isLegallyVerified',
           'createdAt',
@@ -102,7 +111,6 @@ service cloud.firestore {
         data.keys().hasOnly([
           'postingId',
           'driverUid',
-          'driverAutoRegNumber',
           'pickupStation',
           'pickupSide',
           'designatedStand',
@@ -112,6 +120,7 @@ service cloud.firestore {
           'totalCapacitySeats',
           'availableSeats',
           'activeQueueCount',
+          'queueSequence',
           'isActive',
           'isLegallyVerified',
           'createdAt',
@@ -119,7 +128,6 @@ service cloud.firestore {
         ]) &&
         data.postingId == postingId &&
         data.driverUid == request.auth.uid &&
-        (!('driverAutoRegNumber' in data) || isValidAutoRegNumber(data.driverAutoRegNumber)) &&
         data.pickupStation is string &&
         data.pickupStation.size() >= 2 &&
         data.pickupStation.size() <= 80 &&
@@ -141,13 +149,14 @@ service cloud.firestore {
         data.availableSeats is int &&
         data.availableSeats == data.totalCapacitySeats &&
         data.activeQueueCount == 0 &&
+        data.queueSequence == 0 &&
         data.isActive == true &&
         data.isLegallyVerified == false &&
         data.createdAt == request.time &&
         data.updatedAt == request.time;
     }
 
-    function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute) {
+    function isValidSeatLockPayload(data, postingId, passengerUid, parentRoute, negotiation) {
       return hasUserRole('PASSENGER') &&
         data.keys().hasAll([
           'lockId',
@@ -156,6 +165,7 @@ service cloud.firestore {
           'driverUid',
           'seatsLocked',
           'agreedTotalFare',
+          'negotiationId',
           'queuePosition',
           'status',
           'lockedAt',
@@ -168,6 +178,7 @@ service cloud.firestore {
           'driverUid',
           'seatsLocked',
           'agreedTotalFare',
+          'negotiationId',
           'queuePosition',
           'status',
           'lockedAt',
@@ -182,12 +193,67 @@ service cloud.firestore {
         data.seatsLocked >= 1 &&
         data.seatsLocked <= 3 &&
         data.agreedTotalFare is number &&
-        data.agreedTotalFare == parentRoute.data.totalBookingFare &&
+        data.agreedTotalFare > 0 &&
+        data.negotiationId is string &&
+        data.negotiationId.size() >= 1 &&
+        data.negotiationId.size() <= 128 &&
+        negotiation.bookingId == data.negotiationId &&
+        negotiation.status == 'AGREED' &&
+        negotiation.passengerUid == request.auth.uid &&
+        negotiation.driverUid == parentRoute.data.driverUid &&
+        negotiation.routeId == postingId &&
+        negotiation.passengerCount == data.seatsLocked &&
+        negotiation.agreedTotalFareInr == data.agreedTotalFare &&
         data.queuePosition is int &&
-        data.queuePosition >= 1 &&
+        data.queuePosition == getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.queueSequence &&
         data.status == 'LOCKED' &&
         data.lockedAt == request.time &&
         data.updatedAt == request.time;
+    }
+
+    // No client can self-provision an administrator identity.
+    match /admins/{adminUid} {
+      allow read, write: if false;
+    }
+
+    // Driver approval is a separate trusted workflow. Phone OTP proves phone possession,
+    // not vehicle ownership, permit validity, or commercial-driver authorization.
+    match /driver_applications/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if false;
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        incoming().keys().hasAll(['uid', 'phoneNumber', 'autoRegNumber', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['uid', 'phoneNumber', 'autoRegNumber', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().uid == request.auth.uid &&
+        isValidIndianPhone(incoming().phoneNumber) &&
+        matchesVerifiedPhoneClaim(incoming().phoneNumber) &&
+        isValidAutoRegNumber(incoming().autoRegNumber) &&
+        incoming().status == 'PENDING' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if (
+        isAdmin() &&
+        incoming().uid == existing().uid &&
+        incoming().phoneNumber == existing().phoneNumber &&
+        incoming().autoRegNumber == existing().autoRegNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().status in ['APPROVED', 'REJECTED'] &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      ) || (
+        isOwner(userId) &&
+        existing().status == 'REJECTED' &&
+        incoming().uid == existing().uid &&
+        incoming().phoneNumber == existing().phoneNumber &&
+        matchesVerifiedPhoneClaim(incoming().phoneNumber) &&
+        isValidAutoRegNumber(incoming().autoRegNumber) &&
+        incoming().status == 'PENDING' &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['autoRegNumber', 'status', 'updatedAt'])
+      );
+      allow delete: if false;
     }
 
     // Owner-only user profile storage containing PII (+91 phone number and Driver plate)
@@ -195,24 +261,56 @@ service cloud.firestore {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;
 
+      // New accounts always start as passengers. Driver role is never self-assigned.
       allow create: if isValidId(userId) &&
         isOwner(userId) &&
         isValidUserProfile(incoming(), userId) &&
+        incoming().role == 'PASSENGER' &&
+        !('driverAutoRegNumber' in incoming()) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isValidId(userId) &&
-        isOwner(userId) &&
-        isValidUserProfile(incoming(), userId) &&
-        incoming().uid == existing().uid &&
-        incoming().phoneNumber == existing().phoneNumber &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'role',
-          'driverAutoRegNumber',
-          'updatedAt'
-        ]);
+      // Owners may update only the server timestamp. Only a trusted admin can approve
+      // a driver, and only after the corresponding application has been approved.
+      allow update: if isValidId(userId) && (
+        (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().role == existing().role &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
+        ) ||
+        (
+          isAdmin() &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().createdAt == existing().createdAt &&
+          existing().role == 'PASSENGER' &&
+          incoming().role == 'DRIVER' &&
+          'driverAutoRegNumber' in incoming() &&
+          isValidAutoRegNumber(incoming().driverAutoRegNumber) &&
+          exists(/databases/$(database)/documents/driver_applications/$(userId)) &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.status == 'APPROVED' &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.autoRegNumber == incoming().driverAutoRegNumber &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'driverAutoRegNumber', 'updatedAt'])
+        ) ||
+        (
+          isAdmin() &&
+          incoming().uid == existing().uid &&
+          incoming().phoneNumber == existing().phoneNumber &&
+          incoming().createdAt == existing().createdAt &&
+          existing().role == 'DRIVER' &&
+          incoming().role == 'PASSENGER' &&
+          !('driverAutoRegNumber' in incoming()) &&
+          exists(/databases/$(database)/documents/driver_applications/$(userId)) &&
+          get(/databases/$(database)/documents/driver_applications/$(userId)).data.status == 'REJECTED' &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'driverAutoRegNumber', 'updatedAt'])
+        )
+      );
 
       allow delete: if isValidId(userId) && isOwner(userId);
     }
@@ -242,7 +340,7 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt'])
         ) || (
           request.auth.uid != existing().driverUid &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'updatedAt']) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['availableSeats', 'activeQueueCount', 'queueSequence', 'updatedAt']) &&
           incoming().updatedAt == request.time &&
           incoming().availableSeats is int &&
           incoming().availableSeats >= 0 &&
@@ -257,13 +355,15 @@ service cloud.firestore {
               (existing().availableSeats - incoming().availableSeats) >= 1 &&
               (existing().availableSeats - incoming().availableSeats) <= 3 &&
               incoming().activeQueueCount == existing().activeQueueCount + 1 &&
+              incoming().queueSequence == ((('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) + 1) &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked == (existing().availableSeats - incoming().availableSeats)
             ) ||
             // Atomic seat release: restore seats when seat_locks/{uid} moves from LOCKED to RELEASED
             (
               incoming().availableSeats > existing().availableSeats &&
-              incoming().activeQueueCount == existing().activeQueueCount &&
+              incoming().activeQueueCount == existing().activeQueueCount - 1 &&
+              incoming().queueSequence == (('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) &&
               get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'RELEASED' &&
               (incoming().availableSeats - existing().availableSeats) == get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked
@@ -287,44 +387,177 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
           get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
           get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
+          isValidId(incoming().negotiationId) &&
+          exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
           isValidSeatLockPayload(
             incoming(),
             postingId,
             passengerUid,
-            get(/databases/$(database)/documents/active_routes/$(postingId))
+            get(/databases/$(database)/documents/active_routes/$(postingId)),
+            get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
           ) &&
           getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
             (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats - incoming().seatsLocked);
 
         allow update: if isValidId(postingId) &&
           isValidId(passengerUid) &&
-          isOwner(passengerUid) &&
-          hasUserRole('PASSENGER') &&
           exists(/databases/$(database)/documents/active_routes/$(postingId)) &&
-          incoming().updatedAt == request.time &&
           (
-            // Release locked seat back to route inventory
             (
-              existing().status == 'LOCKED' &&
-              incoming().status == 'RELEASED' &&
-              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
-            ) ||
-            // Re-lock after previous release inside atomic transaction
-            (
-              existing().status == 'RELEASED' &&
-              get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
-              get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
-              isValidSeatLockPayload(
-                incoming(),
-                postingId,
-                passengerUid,
-                get(/databases/$(database)/documents/active_routes/$(postingId))
+              // Passenger releases or re-locks their own seat.
+              isOwner(passengerUid) &&
+              hasUserRole('PASSENGER') &&
+              incoming().updatedAt == request.time &&
+              (
+                (
+                  existing().status == 'LOCKED' &&
+                  incoming().status == 'RELEASED' &&
+                  !('driverAutoRegNumber' in incoming()) &&
+                  incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'driverAutoRegNumber']) &&
+                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
+                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats + existing().seatsLocked) &&
+                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.activeQueueCount ==
+                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.activeQueueCount - 1)
+                ) ||
+                (
+                  existing().status == 'RELEASED' &&
+                  get(/databases/$(database)/documents/active_routes/$(postingId)).data.isActive == true &&
+                  get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats >= incoming().seatsLocked &&
+                  isValidId(incoming().negotiationId) &&
+                  exists(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)) &&
+                  isValidSeatLockPayload(
+                    incoming(),
+                    postingId,
+                    passengerUid,
+                    get(/databases/$(database)/documents/active_routes/$(postingId)),
+                    get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
+                  ) &&
+                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
+                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats - incoming().seatsLocked)
+                )
               )
+            ) ||
+            (
+              // Only the approved route driver can reveal the plate to a passenger with a live lock.
+              request.auth.uid == existing().driverUid &&
+              request.auth.uid == get(/databases/$(database)/documents/active_routes/$(postingId)).data.driverUid &&
+              hasUserRole('DRIVER') &&
+              existing().status == 'LOCKED' &&
+              !('driverAutoRegNumber' in existing()) &&
+              'driverAutoRegNumber' in incoming() &&
+              isValidAutoRegNumber(incoming().driverAutoRegNumber) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.driverAutoRegNumber == incoming().driverAutoRegNumber &&
+              incoming().status == existing().status &&
+              incoming().updatedAt == request.time &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['driverAutoRegNumber', 'updatedAt'])
             )
           );
 
         allow delete: if false;
       }
+    }
+
+    // Passenger-first group fare negotiation. Participants may read; only the authenticated
+    // passenger creates the initial offer. Every later write appends exactly one event.
+    function validFareEvent(event, expectedActor) {
+      return event is map &&
+        event.keys().hasAll(['eventId', 'sequence', 'actor', 'type', 'totalFareInr', 'createdAtEpochMs']) &&
+        event.eventId is string && event.eventId.size() >= 1 && event.eventId.size() <= 64 &&
+        event.sequence is int && event.actor == expectedActor &&
+        event.createdAtEpochMs is int &&
+        (event.totalFareInr == null || (event.totalFareInr is number && event.totalFareInr > 0));
+    }
+
+    function validFareNegotiationCreate(data, bookingId) {
+      return hasUserRole('PASSENGER') &&
+        data.keys().hasAll(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
+          'pickupStand', 'destination', 'events', 'status', 'agreedTotalFareInr', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['bookingId', 'routeId', 'passengerUid', 'driverUid', 'passengerCount',
+          'pickupStand', 'destination', 'events', 'status', 'agreedTotalFareInr', 'createdAt', 'updatedAt']) &&
+        data.bookingId == bookingId &&
+        data.passengerUid == request.auth.uid &&
+        data.driverUid != request.auth.uid &&
+        data.routeId is string && data.routeId.size() > 0 &&
+        exists(/databases/$(database)/documents/active_routes/$(data.routeId)) &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.driverUid == data.driverUid &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.isActive == true &&
+        get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.availableSeats >= data.passengerCount &&
+        data.pickupStand == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.designatedStand &&
+        (data.destination == get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.destination ||
+          data.destination in get(/databases/$(database)/documents/active_routes/$(data.routeId)).data.viaPoints) &&
+        data.passengerCount is int && data.passengerCount >= 1 && data.passengerCount <= 3 &&
+        data.pickupStand is string && data.pickupStand.size() >= 3 &&
+        data.destination is string && data.destination.size() >= 3 &&
+        data.pickupStand != data.destination &&
+        data.events is list && data.events.size() == 1 &&
+        validFareEvent(data.events[0], 'PASSENGER') &&
+        data.events[0].sequence == 1 &&
+        data.events[0].totalFareInr is number &&
+        data.events[0].totalFareInr > 0 &&
+        data.events[0].type == 'PASSENGER_PROPOSED' &&
+        data.status == 'OPEN' && data.agreedTotalFareInr == null &&
+        data.createdAt == request.time && data.updatedAt == request.time;
+    }
+
+    function validFareNegotiationUpdate() {
+      let before = existing();
+      let after = incoming();
+      let last = after.events[after.events.size() - 1];
+      let passengerAction = request.auth.uid == before.passengerUid && hasUserRole('PASSENGER');
+      let driverAction = request.auth.uid == before.driverUid && hasUserRole('DRIVER');
+      return (passengerAction || driverAction) &&
+        after.diff(before).affectedKeys().hasOnly(['events', 'status', 'agreedTotalFareInr', 'updatedAt']) &&
+        after.bookingId == before.bookingId &&
+        after.routeId == before.routeId &&
+        after.passengerUid == before.passengerUid &&
+        after.driverUid == before.driverUid &&
+        after.passengerCount == before.passengerCount &&
+        after.pickupStand == before.pickupStand &&
+        after.destination == before.destination &&
+        after.events is list &&
+        after.events.size() == before.events.size() + 1 &&
+        (
+          (before.events.size() == 1 &&
+            after.events[0] == before.events[0]) ||
+          (before.events.size() == 2 &&
+            after.events[0] == before.events[0] &&
+            after.events[1] == before.events[1])
+        ) &&
+        last.sequence == after.events.size() &&
+        last.createdAtEpochMs is int &&
+        after.updatedAt == request.time &&
+        (
+          (before.status == 'OPEN' && driverAction &&
+            validFareEvent(last, 'DRIVER') &&
+            ((last.type == 'DRIVER_ACCEPTED' && after.status == 'AGREED' &&
+              last.totalFareInr == before.events[0].totalFareInr &&
+              after.agreedTotalFareInr == last.totalFareInr) ||
+             (last.type == 'DRIVER_COUNTERED' && after.status == 'COUNTERED' &&
+              last.totalFareInr is number && last.totalFareInr > 0 &&
+              after.agreedTotalFareInr == null) ||
+             (last.type == 'DRIVER_DECLINED' && after.status == 'DECLINED' &&
+              last.totalFareInr == null && after.agreedTotalFareInr == null))) ||
+          (before.status == 'COUNTERED' && passengerAction &&
+            validFareEvent(last, 'PASSENGER') &&
+            ((last.type == 'PASSENGER_ACCEPTED_COUNTER' && after.status == 'AGREED' &&
+              last.totalFareInr == before.events[before.events.size() - 1].totalFareInr &&
+              after.agreedTotalFareInr == last.totalFareInr) ||
+             (last.type == 'PASSENGER_DECLINED_COUNTER' && after.status == 'DECLINED' &&
+              last.totalFareInr == null && after.agreedTotalFareInr == null))) ||
+          ((before.status == 'OPEN' || before.status == 'COUNTERED') &&
+            validFareEvent(last, passengerAction ? 'PASSENGER' : 'DRIVER') &&
+            last.type == 'CANCELLED' && last.totalFareInr == null &&
+            after.status == 'CANCELLED' && after.agreedTotalFareInr == null)
+        );
+    }
+
+    match /fare_negotiations/{bookingId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.passengerUid ||
+         request.auth.uid == resource.data.driverUid);
+      allow create: if isValidId(bookingId) && validFareNegotiationCreate(incoming(), bookingId);
+      allow update: if isValidId(bookingId) && validFareNegotiationUpdate();
+      allow delete: if false;
     }
   }
 }
