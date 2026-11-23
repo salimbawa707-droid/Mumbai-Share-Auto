@@ -6,19 +6,19 @@ Mumbai Share Auto is a separate, independent native Android application develope
 ## Package & App Details
 - **Application ID / Package**: `com.mumbaishareauto.app`
 - **Application Name**: Mumbai Share Auto
-- **Compile SDK**: 35
-- **Target SDK**: 35
+- **Compile SDK**: 36
+- **Target SDK**: 36
 - **Minimum SDK**: 26 (Android 8.0 Oreo)
 - **Toolchain Requirements**:
   - JDK: Java 17
-  - Android Gradle Plugin: 8.8.0
-  - Gradle wrapper: 8.10.2
-  - Kotlin: 2.0.21
-  - Kotlin Compose Compiler Plugin: 2.0.21
+  - Android Gradle Plugin: 8.11.1
+  - Gradle wrapper: 8.14.8
+  - Kotlin: 2.2.20
+  - Kotlin Compose Compiler Plugin: 2.2.20
   - Jetpack Compose BOM: 2024.10.01
   - Room SQLite: 2.7.1
 
-> SDK note: Android Gradle Plugin 8.8 supports up to API 35. Keep the configured SDK values at 35 unless the Android Gradle Plugin is upgraded to a version that supports a newer API level.
+> SDK note: This project targets Android 16 (API 36). The build uses Android Gradle Plugin 8.11.1 and Gradle 8.14.8; keep the toolchain versions aligned with the official Android and Kotlin compatibility requirements.
 
 ## Reusable Components Integrated from Mumbai Auto Meter
 1. **Designated Mumbai Station Stand Directory (`MumbaiStationDirectory.kt`)**:
