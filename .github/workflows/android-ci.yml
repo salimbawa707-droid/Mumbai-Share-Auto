@@ -2,7 +2,7 @@ name: Mumbai Share Auto Android CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -81,10 +81,6 @@ jobs:
     # Ubuntu 22.04 is pinned for a stable Android Emulator / PackageManager host environment.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    env:
-      # GitHub-hosted runners lack KVM; use QEMU TCG with conservative graphics.
-      ANDROID_I_WANT_MY_TCG: "yes"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -96,30 +92,35 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Enable KVM for Android Emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ -e /dev/kvm ]; then
+            ls -l /dev/kvm
+          else
+            echo "::warning::/dev/kvm is unavailable on this runner; emulator acceleration may fall back to software mode."
+          fi
+
       - name: Grant executable permission to Gradle wrapper
         run: chmod +x ./gradlew
 
       - name: Fail fast if instrumentation tests fail to compile
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
 
-      - name: Run Android instrumentation tests on API 35 emulator
+      - name: Run Android instrumentation tests on API 34 emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: google_apis
+          api-level: 34
+          target: google_atd
           arch: x86_64
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 1200
           cores: 4
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -partition-size 4096
-          script: |
-            set +e
-            ./gradlew connectedDebugAndroidTest --no-daemon
-            TEST_STATUS=$?
-            adb logcat -d -v threadtime > instrumentation-logcat.txt
-            adb shell dumpsys activity processes > instrumentation-processes.txt
-            exit "$TEST_STATUS"
+          script: bash -c 'set +e; ./gradlew connectedDebugAndroidTest --no-daemon --info; TEST_STATUS=$?; adb logcat -d -v threadtime > instrumentation-logcat.txt; adb shell dumpsys activity processes > instrumentation-processes.txt; exit "$TEST_STATUS"'
 
       - name: Upload instrumentation diagnostics
         if: always()
