@@ -75,7 +75,7 @@ A green Android build does not replace Firestore emulator tests or a live two-ac
 ## Additional hardening and release verification
 
 - Fare-negotiation updates must preserve the exact ordered prefix of prior events; clients cannot reorder prior offers or counters while appending a new event.
-- CI runs Android instrumentation tests on an API 35 Google APIs emulator, not merely compilation.
+- CI runs Android instrumentation tests on an API 36 Google ATD emulator, not merely compilation.
 - Optional release signing is supported through GitHub Actions secrets. Configure `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` with the app owner's own release keystore. Never commit the keystore or passwords. Without these secrets, CI intentionally emits an unsigned release APK.
 - Configure Firebase App Check with Play Integrity in the Firebase Console, register the Android app's Play signing certificate, ship an App Check-enabled build, monitor metrics, then enforce App Check for Firestore and Authentication only after verified rollout. Do not enable enforcement before valid clients are registered.
 - Configure Firebase Authentication SMS region policy to India only if India is the intended service region; set billing alerts and appropriate quotas, monitor SMS abuse, and enable available phone-auth abuse protections.
