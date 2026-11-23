@@ -102,10 +102,10 @@ jobs:
       - name: Fail fast if instrumentation tests fail to compile
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
 
-      - name: Run Android instrumentation tests on API 35 emulator
+      - name: Run Android instrumentation tests on API 34 emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
