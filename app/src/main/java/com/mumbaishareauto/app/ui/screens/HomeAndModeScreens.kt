@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -153,7 +154,8 @@ fun HomeDashboardScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 52.dp),
+                            .defaultMinSize(minHeight = 52.dp)
+                            .testTag("home_primary_cta"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surface,
@@ -223,7 +225,9 @@ fun HomeDashboardScreen(
                         icon = Icons.Default.Route,
                         accentTone = BadgeTone.AMBER,
                         onClick = { onNavigate(AppRoute.PASSENGER_BOOKING) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("home_offer_route_card")
                     )
                     ProminentActionCard(
                         title = if (currentMode == UserMode.PASSENGER) "Open Full Passenger Workspace" else "Open Full Driver Workspace",
@@ -245,7 +249,8 @@ fun HomeDashboardScreen(
                     subtitle = "Validate party route offer (1–3 seats · fixed party fare)",
                     icon = Icons.Default.Route,
                     accentTone = BadgeTone.AMBER,
-                    onClick = { onNavigate(AppRoute.PASSENGER_BOOKING) }
+                    onClick = { onNavigate(AppRoute.PASSENGER_BOOKING) },
+                    modifier = Modifier.testTag("home_offer_route_card")
                 )
             }
 
@@ -419,7 +424,8 @@ fun DriverModeScreen(
     driverLiveRoutes: List<LiveAutoRoute> = emptyList(),
     liveRouteActionState: LiveRouteActionState = LiveRouteActionState(),
     onDeactivateLiveRoute: (String) -> Unit = {},
-    onSelectRouteForQueue: (String?) -> Unit = {}
+    onSelectRouteForQueue: (String?) -> Unit = {},
+    onShareVehicleNumber: (postingId: String, passengerUid: String) -> Unit = { _, _ -> }
 ) {
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val selectedTab = DriverDashboardTab.entries[selectedTabIndex.coerceIn(0, DriverDashboardTab.entries.lastIndex)]
@@ -446,7 +452,8 @@ fun DriverModeScreen(
                 subtitle = "Station, East/West, designated stand, destination, via points & total fare",
                 icon = Icons.Default.DirectionsCar,
                 accentTone = BadgeTone.AMBER,
-                onClick = { onNavigate(AppRoute.DRIVER_ROUTE_POSTING) }
+                onClick = { onNavigate(AppRoute.DRIVER_ROUTE_POSTING) },
+                modifier = Modifier.testTag("driver_post_route_card")
             )
 
             Row(
@@ -475,7 +482,9 @@ fun DriverModeScreen(
                         selected = selectedTab == tab,
                         onClick = { selectedTabIndex = tab.ordinal },
                         label = { Text(tab.label) },
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("driver_tab_${tab.name}")
                     )
                 }
             }
@@ -488,7 +497,8 @@ fun DriverModeScreen(
                             "Real-time routes broadcast to Cloud Firestore & passenger queue updates"
                         } else {
                             "Live broadcasting requires backend sync; local evaluation drafts appear below"
-                        }
+                        },
+                        modifier = Modifier.testTag("driver_section_${selectedTab.name}")
                     )
                     if (driverLiveRoutes.isNotEmpty()) {
                         driverLiveRoutes.forEach { liveRoute ->
@@ -559,10 +569,29 @@ fun DriverModeScreen(
                                             )
                                         } else {
                                             liveRouteActionState.selectedQueueLocks.forEach { lock ->
-                                                Text(
-                                                    text = "• Queue #${lock.queuePosition}: ${lock.seatsLocked} seat(s) — ${lock.status}",
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(
+                                                        text = "• Queue #${lock.queuePosition}: ${lock.seatsLocked} seat(s) — ${lock.status}",
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                    if (lock.status == "LOCKED") {
+                                                        val sharedPlate = lock.driverAutoRegNumber
+                                                        if (sharedPlate.isNullOrBlank()) {
+                                                            OutlinedButton(
+                                                                onClick = { onShareVehicleNumber(liveRoute.postingId, lock.passengerUid) },
+                                                                modifier = Modifier.defaultMinSize(minHeight = 40.dp)
+                                                            ) {
+                                                                Text("Share vehicle number privately")
+                                                            }
+                                                        } else {
+                                                            Text(
+                                                                text = "Vehicle number shared: $sharedPlate",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -633,7 +662,8 @@ fun DriverModeScreen(
                 DriverDashboardTab.BOOKING_REQUESTS -> {
                     SectionHeader(
                         title = "Booking Requests",
-                        subtitle = "Genuine commuter party requests require backend integration"
+                        subtitle = "Genuine commuter party requests require backend integration",
+                        modifier = Modifier.testTag("driver_section_${selectedTab.name}")
                     )
                     when (driverFeed) {
                         is DriverRequestsFeedResult.BackendUnavailable -> {

@@ -76,6 +76,7 @@ import com.mumbaishareauto.app.ui.screens.BookingHistoryScreen
 import com.mumbaishareauto.app.ui.screens.DriverModeScreen
 import com.mumbaishareauto.app.ui.screens.DriverRoutePostingScreen
 import com.mumbaishareauto.app.ui.screens.FavoritesScreen
+import com.mumbaishareauto.app.ui.screens.FareNegotiationPanel
 import com.mumbaishareauto.app.ui.screens.FindSharedAutoScreen
 import com.mumbaishareauto.app.ui.screens.HelpAboutScreen
 import com.mumbaishareauto.app.ui.screens.HomeDashboardScreen
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        FirebaseAppCheckInstaller.install(applicationContext)
         enableEdgeToEdge()
         MumbaiShareAutoNotificationManager.createNotificationChannels(applicationContext)
         connectivityManager = AndroidNetworkConnectivityManager(applicationContext)
@@ -200,6 +202,7 @@ fun MumbaiShareAutoApp(
     val liveRoutesState = viewModel?.liveRoutesState?.collectAsState()?.value ?: LiveRoutesStreamState.NotConfigured()
     val driverLiveRoutes = viewModel?.driverLiveRoutes?.collectAsState()?.value ?: emptyList()
     val liveRouteActionState = viewModel?.liveRouteActionState?.collectAsState()?.value ?: LiveRouteActionState()
+    val fareNegotiationState = viewModel?.fareNegotiationState?.collectAsState()?.value ?: com.mumbaishareauto.app.ui.FareNegotiationUiState()
     val effectiveFirebaseConfigured = phoneAuthState.isFirebaseConfigured
     val liveRoutesCount = (liveRoutesState as? LiveRoutesStreamState.Live)?.routes?.size ?: 0
 
@@ -458,6 +461,9 @@ fun MumbaiShareAutoApp(
                             },
                             onSelectRouteForQueue = { postingId ->
                                 viewModel?.observeRouteQueue(postingId)
+                            },
+                            onShareVehicleNumber = { postingId, passengerUid ->
+                                viewModel?.shareVehicleNumberWithPassenger(postingId, passengerUid)
                             }
                         )
 
@@ -647,6 +653,19 @@ fun MumbaiShareAutoApp(
 
                         AppRoute.HELP_ABOUT -> HelpAboutScreen()
                     }
+                }
+                if (viewModel != null && currentRoute in setOf(
+                        AppRoute.PASSENGER_BOOKING,
+                        AppRoute.FIND_SHARED_AUTO,
+                        AppRoute.DRIVER_MODE,
+                        AppRoute.DRIVER_ROUTE_POSTING
+                    )) {
+                    FareNegotiationPanel(
+                        viewModel = viewModel,
+                        authState = phoneAuthState,
+                        state = fareNegotiationState,
+                        availableRoutes = (liveRoutesState as? LiveRoutesStreamState.Live)?.routes.orEmpty()
+                    )
                 }
             }
         }

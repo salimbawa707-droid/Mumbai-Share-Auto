@@ -409,6 +409,7 @@ fun FindSharedAutoScreen(
                                 isReleasing = liveRouteActionState.releasingPostingId == liveRoute.postingId,
                                 isQueueExpanded = isSelectedQueue,
                                 queueLocks = if (isSelectedQueue) liveRouteActionState.selectedQueueLocks else emptyList(),
+                                allowSeatLock = false,
                                 onLockSeats = { seats -> onLockSeat(liveRoute.postingId, seats) },
                                 onReleaseSeat = { onReleaseSeat(liveRoute.postingId) },
                                 onToggleQueueView = {
@@ -462,6 +463,7 @@ fun LiveAutoRouteCard(
     isReleasing: Boolean,
     isQueueExpanded: Boolean,
     queueLocks: List<RouteSeatLock>,
+    allowSeatLock: Boolean = true,
     onLockSeats: (Int) -> Unit,
     onReleaseSeat: () -> Unit,
     onToggleQueueView: () -> Unit
@@ -470,8 +472,10 @@ fun LiveAutoRouteCard(
     var selectedSeats by rememberSaveable(route.postingId, route.availableSeats) {
         mutableIntStateOf(1.coerceAtMost(route.availableSeats.coerceAtLeast(1)))
     }
-    val userHoldsActiveLock = currentAuthUid != null &&
-        queueLocks.any { it.passengerUid == currentAuthUid && it.status == RouteSeatLock.STATUS_LOCKED }
+    val myActiveLock = currentAuthUid?.let { uid ->
+        queueLocks.firstOrNull { it.passengerUid == uid && it.status == RouteSeatLock.STATUS_LOCKED }
+    }
+    val userHoldsActiveLock = myActiveLock != null
     val isOwnDriverRoute = currentAuthUid != null && route.driverUid == currentAuthUid
     val formattedFare = if (route.totalBookingFare % 1.0 == 0.0) {
         String.format(Locale.US, "₹%.0f", route.totalBookingFare)
@@ -548,6 +552,20 @@ fun LiveAutoRouteCard(
                 }
             }
 
+            if (myActiveLock != null) {
+                val sharedPlate = myActiveLock.driverAutoRegNumber
+                Text(
+                    text = if (sharedPlate.isNullOrBlank()) {
+                        "Seat reserved. The driver can privately share the vehicle number from their Driver Dashboard."
+                    } else {
+                        "Driver vehicle number: ${AuthDomainValidator.formatAutoRegForDisplay(sharedPlate)}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Text(
                 text = "Flat booking fare covers your whole party (never multiplied per seat).",
                 style = MaterialTheme.typography.labelSmall,
@@ -609,6 +627,14 @@ fun LiveAutoRouteCard(
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         Text("Release My Seat Lock")
+                    }
+                } else if (!allowSeatLock) {
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false,
+                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                    ) {
+                        Text("Negotiate total fare first")
                     }
                 } else {
                     Button(

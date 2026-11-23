@@ -205,10 +205,33 @@ service cloud.firestore {
         negotiation.passengerCount == data.seatsLocked &&
         negotiation.agreedTotalFareInr == data.agreedTotalFare &&
         data.queuePosition is int &&
+        data.queuePosition >= 1 &&
         data.queuePosition == getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.queueSequence &&
         data.status == 'LOCKED' &&
         data.lockedAt == request.time &&
         data.updatedAt == request.time;
+    }
+
+    function routeQueueSequence(routeData) {
+      return ('queueSequence' in routeData) ? routeData.queueSequence : routeData.activeQueueCount;
+    }
+
+    function isValidSeatLockRouteAfter(postingId, beforeRouteData, seatsLocked) {
+      let afterRoute = getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data;
+      return beforeRouteData.isActive == true &&
+        afterRoute.isActive == true &&
+        beforeRouteData.availableSeats >= seatsLocked &&
+        afterRoute.availableSeats == (beforeRouteData.availableSeats - seatsLocked) &&
+        afterRoute.activeQueueCount == (beforeRouteData.activeQueueCount + 1) &&
+        afterRoute.queueSequence == (routeQueueSequence(beforeRouteData) + 1);
+    }
+
+    function isValidSeatReleaseRouteAfter(postingId, beforeRouteData, seatsReleased) {
+      let afterRoute = getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data;
+      return beforeRouteData.activeQueueCount >= 1 &&
+        afterRoute.availableSeats == (beforeRouteData.availableSeats + seatsReleased) &&
+        afterRoute.activeQueueCount == (beforeRouteData.activeQueueCount - 1) &&
+        afterRoute.queueSequence == routeQueueSequence(beforeRouteData);
     }
 
     // No client can self-provision an administrator identity.
@@ -355,15 +378,17 @@ service cloud.firestore {
               (existing().availableSeats - incoming().availableSeats) >= 1 &&
               (existing().availableSeats - incoming().availableSeats) <= 3 &&
               incoming().activeQueueCount == existing().activeQueueCount + 1 &&
-              incoming().queueSequence == ((('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) + 1) &&
+              incoming().queueSequence == (routeQueueSequence(existing()) + 1) &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
-              getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked == (existing().availableSeats - incoming().availableSeats)
+              getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked == (existing().availableSeats - incoming().availableSeats) &&
+              getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.queuePosition == incoming().queueSequence
             ) ||
             // Atomic seat release: restore seats when seat_locks/{uid} moves from LOCKED to RELEASED
             (
+              existing().activeQueueCount >= 1 &&
               incoming().availableSeats > existing().availableSeats &&
               incoming().activeQueueCount == existing().activeQueueCount - 1 &&
-              incoming().queueSequence == (('queueSequence' in existing()) ? existing().queueSequence : existing().activeQueueCount) &&
+              incoming().queueSequence == routeQueueSequence(existing()) &&
               get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'LOCKED' &&
               getAfter(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.status == 'RELEASED' &&
               (incoming().availableSeats - existing().availableSeats) == get(/databases/$(database)/documents/active_routes/$(postingId)/seat_locks/$(request.auth.uid)).data.seatsLocked
@@ -396,8 +421,11 @@ service cloud.firestore {
             get(/databases/$(database)/documents/active_routes/$(postingId)),
             get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
           ) &&
-          getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
-            (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats - incoming().seatsLocked);
+          isValidSeatLockRouteAfter(
+            postingId,
+            get(/databases/$(database)/documents/active_routes/$(postingId)).data,
+            incoming().seatsLocked
+          );
 
         allow update: if isValidId(postingId) &&
           isValidId(passengerUid) &&
@@ -414,10 +442,11 @@ service cloud.firestore {
                   incoming().status == 'RELEASED' &&
                   !('driverAutoRegNumber' in incoming()) &&
                   incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'driverAutoRegNumber']) &&
-                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
-                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats + existing().seatsLocked) &&
-                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.activeQueueCount ==
-                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.activeQueueCount - 1)
+                  isValidSeatReleaseRouteAfter(
+                    postingId,
+                    get(/databases/$(database)/documents/active_routes/$(postingId)).data,
+                    existing().seatsLocked
+                  )
                 ) ||
                 (
                   existing().status == 'RELEASED' &&
@@ -432,8 +461,11 @@ service cloud.firestore {
                     get(/databases/$(database)/documents/active_routes/$(postingId)),
                     get(/databases/$(database)/documents/fare_negotiations/$(incoming().negotiationId)).data
                   ) &&
-                  getAfter(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats ==
-                    (get(/databases/$(database)/documents/active_routes/$(postingId)).data.availableSeats - incoming().seatsLocked)
+                  isValidSeatLockRouteAfter(
+                    postingId,
+                    get(/databases/$(database)/documents/active_routes/$(postingId)).data,
+                    incoming().seatsLocked
+                  )
                 )
               )
             ) ||

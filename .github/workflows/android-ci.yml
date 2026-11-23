@@ -49,7 +49,7 @@ jobs:
       - name: Run Android unit tests and lint
         run: ./gradlew clean testDebugUnitTest lintDebug --no-daemon
 
-      - name: Compile instrumentation tests (fail-fast check)
+      - name: Compile Android instrumentation test APK
         run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
 
       - name: Prepare optional release signing key
@@ -78,9 +78,11 @@ jobs:
 
   android-instrumentation:
     name: Android instrumentation tests on emulator
+    # Ubuntu 22.04 is pinned for a stable Android Emulator / PackageManager host environment.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
+      # GitHub-hosted runners lack KVM; use QEMU TCG with conservative graphics.
       ANDROID_I_WANT_MY_TCG: "yes"
 
     steps:
@@ -97,6 +99,9 @@ jobs:
       - name: Grant executable permission to Gradle wrapper
         run: chmod +x ./gradlew
 
+      - name: Fail fast if instrumentation tests fail to compile
+        run: ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
+
       - name: Run Android instrumentation tests on API 35 emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
@@ -110,7 +115,6 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -partition-size 4096
           script: |
             set +e
-            ./gradlew :app:compileDebugAndroidTestKotlin --no-daemon
             ./gradlew connectedDebugAndroidTest --no-daemon
             TEST_STATUS=$?
             adb logcat -d -v threadtime > instrumentation-logcat.txt

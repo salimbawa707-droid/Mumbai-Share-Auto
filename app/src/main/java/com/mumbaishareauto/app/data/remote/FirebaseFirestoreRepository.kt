@@ -45,6 +45,7 @@ data class LiveAutoRoute(
     val totalCapacitySeats: Int,
     val availableSeats: Int,
     val activeQueueCount: Int = 0,
+    val queueSequence: Int = activeQueueCount,
     val isActive: Boolean = true,
     val isLegallyVerified: Boolean = false,
     val createdAtMs: Long? = null,
@@ -86,14 +87,11 @@ data class LiveAutoRoute(
             FIELD_TOTAL_CAPACITY_SEATS to totalCapacitySeats,
             FIELD_AVAILABLE_SEATS to availableSeats,
             FIELD_ACTIVE_QUEUE_COUNT to activeQueueCount,
+            FIELD_QUEUE_SEQUENCE to queueSequence,
             FIELD_IS_ACTIVE to isActive,
             FIELD_IS_LEGALLY_VERIFIED to false
         )
-        val normalizedPlate = driverAutoRegNumber?.let { AuthDomainValidator.normalizeAutoRegNumber(it) }
-            ?.takeIf { AuthDomainValidator.INDIAN_AUTO_REG_REGEX.matches(it) }
-        if (normalizedPlate != null) {
-            fields[FIELD_DRIVER_AUTO_REG_NUMBER] = normalizedPlate
-        }
+        // Vehicle registration is private profile data; never publish it in the public live-route feed.
         return fields
     }
 
@@ -113,6 +111,7 @@ data class LiveAutoRoute(
         const val FIELD_TOTAL_CAPACITY_SEATS = "totalCapacitySeats"
         const val FIELD_AVAILABLE_SEATS = "availableSeats"
         const val FIELD_ACTIVE_QUEUE_COUNT = "activeQueueCount"
+        const val FIELD_QUEUE_SEQUENCE = "queueSequence"
         const val FIELD_IS_ACTIVE = "isActive"
         const val FIELD_IS_LEGALLY_VERIFIED = "isLegallyVerified"
         const val FIELD_CREATED_AT = "createdAt"
@@ -147,15 +146,16 @@ data class LiveAutoRoute(
             // Reject corrupt inventory instead of coercing it into a plausible-looking seat count.
             if (totalCapacity !in MIN_SEATS..MAX_SEATS || available !in 0..totalCapacity) return null
             val queueCount = ((data[FIELD_ACTIVE_QUEUE_COUNT] as? Number)?.toInt() ?: 0).takeIf { it >= 0 } ?: return null
+            val queueSequence = ((data[FIELD_QUEUE_SEQUENCE] as? Number)?.toInt() ?: queueCount).takeIf { it >= queueCount } ?: return null
             // Missing active state is unknown; never silently advertise an unverified route as active.
             val isActive = data[FIELD_IS_ACTIVE] as? Boolean ?: return null
             val isLegallyVerified = (data[FIELD_IS_LEGALLY_VERIFIED] as? Boolean) ?: false
-            val plate = (data[FIELD_DRIVER_AUTO_REG_NUMBER] as? String)?.trim()?.ifEmpty { null }
-
+            // Older route documents may contain a public registration plate. Do not surface it
+            // through the route model; new route writes never include this field.
             return LiveAutoRoute(
                 postingId = postingId,
                 driverUid = driverUid,
-                driverAutoRegNumber = plate,
+                driverAutoRegNumber = null,
                 pickupStation = pickupStation,
                 pickupSide = pickupSide,
                 designatedStand = designatedStand,
@@ -165,6 +165,7 @@ data class LiveAutoRoute(
                 totalCapacitySeats = totalCapacity,
                 availableSeats = available,
                 activeQueueCount = queueCount,
+                queueSequence = queueSequence,
                 isActive = isActive,
                 isLegallyVerified = isLegallyVerified,
                 createdAtMs = createdAtMs,
@@ -183,14 +184,16 @@ data class RouteSeatLock(
     val postingId: String,
     val passengerUid: String,
     val driverUid: String,
+    val negotiationId: String? = null,
     val seatsLocked: Int,
     val agreedTotalFare: Double,
     val queuePosition: Int,
     val status: String = STATUS_LOCKED,
     val lockedAtMs: Long? = null,
-    val updatedAtMs: Long? = null
+    val updatedAtMs: Long? = null,
+    val driverAutoRegNumber: String? = null
 ) {
-    fun toBaseFirestoreFields(): Map<String, Any> = linkedMapOf(
+    fun toBaseFirestoreFields(): Map<String, Any> = linkedMapOf<String, Any>(
         FIELD_LOCK_ID to lockId,
         FIELD_POSTING_ID to postingId,
         FIELD_PASSENGER_UID to passengerUid,
@@ -199,7 +202,10 @@ data class RouteSeatLock(
         FIELD_AGREED_TOTAL_FARE to agreedTotalFare,
         FIELD_QUEUE_POSITION to queuePosition,
         FIELD_STATUS to status
-    )
+    ).apply {
+        negotiationId?.takeIf { it.isNotBlank() }?.let { put(FIELD_NEGOTIATION_ID, it) }
+        driverAutoRegNumber?.takeIf { it.isNotBlank() }?.let { put(FIELD_DRIVER_AUTO_REG_NUMBER, it) }
+    }
 
     companion object {
         const val STATUS_LOCKED = "LOCKED"
@@ -209,6 +215,8 @@ data class RouteSeatLock(
         const val FIELD_POSTING_ID = "postingId"
         const val FIELD_PASSENGER_UID = "passengerUid"
         const val FIELD_DRIVER_UID = "driverUid"
+        const val FIELD_NEGOTIATION_ID = "negotiationId"
+        const val FIELD_DRIVER_AUTO_REG_NUMBER = "driverAutoRegNumber"
         const val FIELD_SEATS_LOCKED = "seatsLocked"
         const val FIELD_AGREED_TOTAL_FARE = "agreedTotalFare"
         const val FIELD_QUEUE_POSITION = "queuePosition"
@@ -238,12 +246,14 @@ data class RouteSeatLock(
                 postingId = postingId,
                 passengerUid = passengerUid,
                 driverUid = driverUid,
+                negotiationId = (data[FIELD_NEGOTIATION_ID] as? String)?.trim()?.takeIf { it.isNotEmpty() },
                 seatsLocked = seatsLocked,
                 agreedTotalFare = agreedFare,
                 queuePosition = queuePosition,
                 status = status,
                 lockedAtMs = lockedAtMs,
-                updatedAtMs = updatedAtMs
+                updatedAtMs = updatedAtMs,
+                driverAutoRegNumber = (data[FIELD_DRIVER_AUTO_REG_NUMBER] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -369,6 +379,7 @@ object LiveRouteTransactionEngine {
             totalCapacitySeats = validated.availableSeats,
             availableSeats = validated.availableSeats,
             activeQueueCount = 0,
+            queueSequence = 0,
             isActive = true,
             isLegallyVerified = false,
             createdAtMs = nowMs,
@@ -391,6 +402,8 @@ object LiveRouteTransactionEngine {
         existingLock: RouteSeatLock?,
         passengerUid: String,
         seatsRequested: Int,
+        agreedTotalFare: Double? = null,
+        negotiationId: String? = null,
         nowMs: Long = System.currentTimeMillis()
     ): FirestoreActionResult<SeatLockTransitionOutput> {
         val cleanPassengerUid = passengerUid.trim()
@@ -410,6 +423,12 @@ object LiveRouteTransactionEngine {
             return FirestoreActionResult.Failure(
                 "Requested seats must be between ${LiveAutoRoute.MIN_SEATS} and ${LiveAutoRoute.MAX_SEATS}."
             )
+        }
+        if (agreedTotalFare != null && (!agreedTotalFare.isFinite() || agreedTotalFare <= 0.0)) {
+            return FirestoreActionResult.Failure("Agreed total fare must be a positive finite amount.")
+        }
+        if (negotiationId != null && (negotiationId.isBlank() || agreedTotalFare == null)) {
+            return FirestoreActionResult.Failure("A valid negotiation ID and agreed total fare must be supplied together.")
         }
         if (existingLock != null && existingLock.status == RouteSeatLock.STATUS_LOCKED) {
             return FirestoreActionResult.Failure(
@@ -432,10 +451,12 @@ object LiveRouteTransactionEngine {
 
         val nextAvailableSeats = currentRoute.availableSeats - seatsRequested
         val nextQueueCount = currentRoute.activeQueueCount + 1
+        val nextQueueSequence = currentRoute.queueSequence + 1
 
         val updatedRoute = currentRoute.copy(
             availableSeats = nextAvailableSeats,
             activeQueueCount = nextQueueCount,
+            queueSequence = nextQueueSequence,
             updatedAtMs = nowMs
         )
         val lock = RouteSeatLock(
@@ -443,9 +464,10 @@ object LiveRouteTransactionEngine {
             postingId = currentRoute.postingId,
             passengerUid = cleanPassengerUid,
             driverUid = currentRoute.driverUid,
+            negotiationId = negotiationId?.trim()?.takeIf { it.isNotEmpty() },
             seatsLocked = seatsRequested,
-            agreedTotalFare = currentRoute.totalBookingFare,
-            queuePosition = nextQueueCount,
+            agreedTotalFare = agreedTotalFare ?: currentRoute.totalBookingFare,
+            queuePosition = nextQueueSequence,
             status = RouteSeatLock.STATUS_LOCKED,
             lockedAtMs = nowMs,
             updatedAtMs = nowMs
@@ -466,15 +488,20 @@ object LiveRouteTransactionEngine {
         if (existingLock.status != RouteSeatLock.STATUS_LOCKED) {
             return FirestoreActionResult.Failure("This seat lock has already been released.")
         }
+        if (currentRoute.activeQueueCount <= 0) {
+            return FirestoreActionResult.Failure("Active queue count is inconsistent; seat release was blocked for safety.")
+        }
         val restoredSeats = (currentRoute.availableSeats + existingLock.seatsLocked)
             .coerceAtMost(currentRoute.totalCapacitySeats)
         val updatedRoute = currentRoute.copy(
             availableSeats = restoredSeats,
+            activeQueueCount = currentRoute.activeQueueCount - 1,
             updatedAtMs = nowMs
         )
         val releasedLock = existingLock.copy(
             status = RouteSeatLock.STATUS_RELEASED,
-            updatedAtMs = nowMs
+            updatedAtMs = nowMs,
+            driverAutoRegNumber = null
         )
         return FirestoreActionResult.Success(SeatLockTransitionOutput(updatedRoute, releasedLock))
     }
@@ -489,12 +516,19 @@ interface LiveRoutesDataSource {
     suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
-        seatsRequested: Int
+        seatsRequested: Int,
+        agreedTotalFare: Double? = null,
+        negotiationId: String? = null
     ): FirestoreActionResult<RouteSeatLock>
     suspend fun releaseSeatTransaction(
         postingId: String,
         passengerUid: String
     ): FirestoreActionResult<Unit>
+    suspend fun shareVehicleNumberWithPassenger(
+        postingId: String,
+        passengerUid: String,
+        driverAutoRegNumber: String
+    ): FirestoreActionResult<Unit> = FirestoreActionResult.Failure("Vehicle-number sharing is unavailable.")
     suspend fun deactivateDriverRoute(
         postingId: String,
         driverUid: String
@@ -724,12 +758,23 @@ class FirebaseFirestoreRepository(
     override suspend fun lockSeatTransaction(
         postingId: String,
         passengerUid: String,
-        seatsRequested: Int
+        seatsRequested: Int,
+        agreedTotalFare: Double?,
+        negotiationId: String?
     ): FirestoreActionResult<RouteSeatLock> = withContext(ioDispatcher) {
         val cleanPostingId = postingId.trim()
         val cleanPassengerUid = passengerUid.trim()
         if (cleanPostingId.isEmpty() || cleanPassengerUid.isEmpty()) {
             return@withContext FirestoreActionResult.Failure("Route ID and Passenger UID are required.")
+        }
+        val cleanNegotiationId = negotiationId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return@withContext FirestoreActionResult.Failure(
+                "A confirmed fare negotiation is required before reserving seats."
+            )
+        if (agreedTotalFare == null || !agreedTotalFare.isFinite() || agreedTotalFare <= 0.0) {
+            return@withContext FirestoreActionResult.Failure(
+                "A positive, confirmed whole-group fare is required before reserving seats."
+            )
         }
         val db = firestore ?: return@withContext FirestoreActionResult.Failure(
             message = FirebaseRuntimeInspector.UNCONFIGURED_MESSAGE
@@ -743,6 +788,7 @@ class FirebaseFirestoreRepository(
 
         val routeRef = db.collection(LiveAutoRoute.COLLECTION_ACTIVE_ROUTES).document(cleanPostingId)
         val lockRef = routeRef.collection(LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS).document(cleanPassengerUid)
+        val negotiationRef = db.collection(FareNegotiationFirestoreRepository.COLLECTION).document(cleanNegotiationId)
         val path = "${LiveAutoRoute.COLLECTION_ACTIVE_ROUTES}/$cleanPostingId/${LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS}/$cleanPassengerUid"
 
         try {
@@ -756,6 +802,26 @@ class FirebaseFirestoreRepository(
                 ) ?: throw SeatLockConflictException("Route document data is invalid.", false)
 
                 val existingLockSnap = tx.get(lockRef)
+                val negotiationSnap = tx.get(negotiationRef)
+                val negotiation = negotiationSnap.data
+                    ?: throw SeatLockConflictException("Confirmed fare negotiation was not found.", false)
+                val negotiatedFare = (negotiation["agreedTotalFareInr"] as? Number)?.toDouble()
+                val negotiationValid =
+                    negotiationSnap.exists() &&
+                    negotiation["bookingId"] == cleanNegotiationId &&
+                    negotiation["status"] == "AGREED" &&
+                    negotiation["passengerUid"] == cleanPassengerUid &&
+                    negotiation["driverUid"] == currentRoute.driverUid &&
+                    negotiation["routeId"] == cleanPostingId &&
+                    (negotiation["passengerCount"] as? Number)?.toInt() == seatsRequested &&
+                    negotiatedFare != null && negotiatedFare.isFinite() &&
+                    kotlin.math.abs(negotiatedFare - agreedTotalFare) < 0.000001
+                if (!negotiationValid) {
+                    throw SeatLockConflictException(
+                        "This fare agreement is not valid for your account, route, passenger count or agreed total.",
+                        false
+                    )
+                }
                 val existingLock = if (existingLockSnap.exists()) {
                     existingLockSnap.data?.let { lockData ->
                         RouteSeatLock.fromFirestoreFields(existingLockSnap.id, lockData)
@@ -764,11 +830,14 @@ class FirebaseFirestoreRepository(
                     null
                 }
 
+                val routeForFare = currentRoute.copy(totalBookingFare = agreedTotalFare)
                 when (val transition = LiveRouteTransactionEngine.computeSeatLockTransition(
-                    currentRoute = currentRoute,
+                    currentRoute = routeForFare,
                     existingLock = existingLock,
                     passengerUid = cleanPassengerUid,
-                    seatsRequested = seatsRequested
+                    seatsRequested = seatsRequested,
+                    agreedTotalFare = agreedTotalFare,
+                    negotiationId = cleanNegotiationId
                 )) {
                     is FirestoreActionResult.Failure -> {
                         throw SeatLockConflictException(
@@ -781,6 +850,7 @@ class FirebaseFirestoreRepository(
                         val routeUpdates = mapOf<String, Any>(
                             LiveAutoRoute.FIELD_AVAILABLE_SEATS to output.updatedRoute.availableSeats,
                             LiveAutoRoute.FIELD_ACTIVE_QUEUE_COUNT to output.updatedRoute.activeQueueCount,
+                            LiveAutoRoute.FIELD_QUEUE_SEQUENCE to output.updatedRoute.queueSequence,
                             LiveAutoRoute.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                         )
                         val lockPayload = output.createdOrUpdatedLock.toBaseFirestoreFields().toMutableMap().apply {
@@ -808,6 +878,66 @@ class FirebaseFirestoreRepository(
                 operation = FirestoreOperationType.WRITE,
                 path = path
             )
+        }
+    }
+
+    override suspend fun shareVehicleNumberWithPassenger(
+        postingId: String,
+        passengerUid: String,
+        driverAutoRegNumber: String
+    ): FirestoreActionResult<Unit> = withContext(ioDispatcher) {
+        val cleanPostingId = postingId.trim()
+        val cleanPassengerUid = passengerUid.trim()
+        val cleanPlate = driverAutoRegNumber.trim().uppercase()
+        val db = firestore ?: return@withContext FirestoreActionResult.Failure(
+            message = FirebaseRuntimeInspector.UNCONFIGURED_MESSAGE
+        )
+        if (cleanPostingId.isEmpty() || cleanPassengerUid.isEmpty() ||
+            !Regex("^[A-Z]{2}[0-9]{2}[A-Z]{1,3}[0-9]{4}$").matches(cleanPlate)
+        ) {
+            return@withContext FirestoreActionResult.Failure("A valid route, passenger and vehicle registration are required.")
+        }
+        val signedInUid = auth?.currentUser?.uid
+        if (signedInUid.isNullOrBlank()) {
+            return@withContext FirestoreActionResult.Failure("Sign in with the approved Driver account to share the vehicle number.")
+        }
+        val routeRef = db.collection(LiveAutoRoute.COLLECTION_ACTIVE_ROUTES).document(cleanPostingId)
+        val lockRef = routeRef.collection(LiveAutoRoute.SUBCOLLECTION_SEAT_LOCKS).document(cleanPassengerUid)
+        val path = "active_routes/" + cleanPostingId + "/seat_locks/" + cleanPassengerUid
+        try {
+            db.runTransaction { tx ->
+                val routeSnap = tx.get(routeRef)
+                val lockSnap = tx.get(lockRef)
+                val route = routeSnap.data
+                val lock = lockSnap.data
+                if (!routeSnap.exists() || route?.get(LiveAutoRoute.FIELD_DRIVER_UID) != signedInUid) {
+                    throw SeatLockConflictException("Only the driver who owns this route can share its vehicle number.", false)
+                }
+                if (!lockSnap.exists() || lock == null ||
+                    lock[RouteSeatLock.FIELD_STATUS] != RouteSeatLock.STATUS_LOCKED ||
+                    lock[RouteSeatLock.FIELD_DRIVER_UID] != signedInUid ||
+                    lock[RouteSeatLock.FIELD_PASSENGER_UID] != cleanPassengerUid
+                ) {
+                    throw SeatLockConflictException("Vehicle number can be shared only with a passenger who currently holds a locked seat.", false)
+                }
+                if (!(lock[RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER] as? String).isNullOrBlank()) {
+                    throw SeatLockConflictException("Vehicle number has already been shared with this passenger.", false)
+                }
+                tx.update(
+                    lockRef,
+                    mapOf(
+                        RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER to cleanPlate,
+                        RouteSeatLock.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    )
+                )
+            }.await()
+            FirestoreActionResult.Success(Unit)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (conflict: SeatLockConflictException) {
+            FirestoreActionResult.Failure(conflict.userMessage, conflict.isDoubleBookingConflict)
+        } catch (e: Exception) {
+            failureFromException(e, FirestoreOperationType.UPDATE, path)
         }
     }
 
@@ -863,6 +993,7 @@ class FirebaseFirestoreRepository(
                             routeRef,
                             mapOf(
                                 LiveAutoRoute.FIELD_AVAILABLE_SEATS to output.updatedRoute.availableSeats,
+                                LiveAutoRoute.FIELD_ACTIVE_QUEUE_COUNT to output.updatedRoute.activeQueueCount,
                                 LiveAutoRoute.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                             )
                         )
@@ -870,6 +1001,7 @@ class FirebaseFirestoreRepository(
                             lockRef,
                             mapOf(
                                 RouteSeatLock.FIELD_STATUS to RouteSeatLock.STATUS_RELEASED,
+                                RouteSeatLock.FIELD_DRIVER_AUTO_REG_NUMBER to FieldValue.delete(),
                                 RouteSeatLock.FIELD_UPDATED_AT to FieldValue.serverTimestamp()
                             )
                         )
