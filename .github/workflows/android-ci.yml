@@ -120,13 +120,7 @@ jobs:
           emulator-boot-timeout: 1200
           cores: 4
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 4096 -partition-size 4096
-          script: |
-            set +e
-            ./gradlew connectedDebugAndroidTest --no-daemon --info
-            TEST_STATUS=$?
-            adb logcat -d -v threadtime > instrumentation-logcat.txt
-            adb shell dumpsys activity processes > instrumentation-processes.txt
-            exit "$TEST_STATUS"
+          script: bash -c 'set +e; ./gradlew connectedDebugAndroidTest --no-daemon --info; TEST_STATUS=$?; adb logcat -d -v threadtime > instrumentation-logcat.txt; adb shell dumpsys activity processes > instrumentation-processes.txt; exit "$TEST_STATUS"'
 
       - name: Upload instrumentation diagnostics
         if: always()
